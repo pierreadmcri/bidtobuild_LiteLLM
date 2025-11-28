@@ -1,0 +1,7 @@
+streamlit
+pandas
+python-dotenv
+litellm
+pypdf
+python-docx
+tiktoken

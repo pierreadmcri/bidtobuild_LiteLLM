@@ -1,0 +1,19 @@
+# --- Sécurité (Le plus important) ---
+.env
+.env.local
+.DS_Store
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# --- Environnements virtuels (si tu en utilises) ---
+venv/
+.venv/
+env/
+
+# --- IDE (optionnel mais recommandé) ---
+.vscode/
+.idea/
