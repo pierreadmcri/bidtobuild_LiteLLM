@@ -32,3 +32,11 @@ L'outil scanne un répertoire local, identifie les fichiers pertinents grâce à
    ```bash
    git clone [https://github.com/votre-user/votre-repo.git](https://github.com/votre-user/votre-repo.git)
    cd votre-repo
+
+## 🤖 Lancer l'app
+Installer **Python 3.11** 
+Se positionner dans le repertoire via Terminal
+Créer un environnement virtuel ex :**python3.11 -m venv .venv**
+Activer l'environnement virtuel Window : **.venv\Scripts\Activate.ps1** Mac : **source .venv/bin/activate**
+Installer les lib **pip install -r requirements.txt**
+Lancer l'app : **streamlit run app.py**
