@@ -16,7 +16,7 @@ from docx import Document
 
 load_dotenv()
 model_name = os.getenv("MODEL_NAME", "azure/gpt-4.1-mini")
-max_input_tokens = int(os.getenv("MAX_INPUT_TOKENS", 6000))
+max_input_tokens = int(os.getenv("MAX_INPUT_TOKENS", 30000))
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt"}
 
 # Configuration de la page
@@ -243,7 +243,7 @@ if start_analysis:
 
             system_prompt = """
             Tu es un chef de projet expert en analyse de projets IT.
-            Fais une synthèse structurée des documents fournis (RBO, PTC, BCO, BDC).
+            Fais une synthèse structurée des documents fournis RBO, PTC (proposistion tehcnique et commerciale), BCO(fiche budegetaire, jours/homme, profils etc..), BDC(Bon de commande).
             Pour chaque type de document trouvé, extrais les points clés, les montants financiers et les alertes.
             Si un type de document manque, indique-le.
             """
