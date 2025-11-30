@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import re
 import os
-import time
 from datetime import datetime
 from dotenv import load_dotenv
 from litellm import completion, token_counter
@@ -17,6 +16,8 @@ from docx import Document
 
 load_dotenv()
 model_name = os.getenv("MODEL_NAME", "azure/gpt-4.1-mini")
+max_input_tokens = int(os.getenv("MAX_INPUT_TOKENS", 6000))
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt"}
 
 # Configuration de la page
 st.set_page_config(page_title="Scanner Local Documents", page_icon="📂", layout="wide")
@@ -29,12 +30,15 @@ def read_file_content(filepath):
     """Lit le contenu texte d'un fichier selon son extension."""
     ext = os.path.splitext(filepath)[1].lower()
     content = ""
-    
+
     try:
         if ext == ".pdf":
             reader = PdfReader(filepath)
             for page in reader.pages:
-                content += page.extract_text() + "\n"
+                page_text = page.extract_text() or ""
+                content += page_text + "\n"
+            if not content.strip():
+                return "[Alerte : Aucun texte lisible extrait du PDF. Le document est peut-être scanné ou protégé.]"
         elif ext == ".docx":
             doc = Document(filepath)
             for para in doc.paragraphs:
@@ -46,38 +50,64 @@ def read_file_content(filepath):
             return f"[Format {ext} non supporté]"
     except Exception as e:
         return f"[Erreur de lecture : {str(e)}]"
-        
+
     return content
 
-def scan_directory(directory_path):
-    """Scanne un dossier réel pour lister les fichiers."""
+
+def scan_directory(directory_path, allowed_extensions=ALLOWED_EXTENSIONS):
+    """Scanne récursivement un dossier pour lister les fichiers autorisés."""
     files_data = []
-    
+
     if not os.path.isdir(directory_path):
         return []
 
-    # On parcourt le dossier
-    for filename in os.listdir(directory_path):
-        filepath = os.path.join(directory_path, filename)
-        
-        # On ignore les dossiers, on ne garde que les fichiers
-        if os.path.isfile(filepath):
+    for root_dir, _, files in os.walk(directory_path):
+        for filename in files:
+            ext = os.path.splitext(filename)[1].lower()
+            if ext not in allowed_extensions:
+                continue
+            filepath = os.path.join(root_dir, filename)
+            if not os.path.isfile(filepath):
+                continue
+
             stats = os.stat(filepath)
             mod_time = datetime.fromtimestamp(stats.st_mtime)
-            
+
             files_data.append({
                 "name": filename,
                 "path": filepath,
                 "date": mod_time,
                 "size": stats.st_size
             })
-            
+
     return files_data
+
 
 def estimate_tokens(text):
     """Estimation simple ou précise via tiktoken."""
     # Note: token_counter de litellm est le plus précis
     return token_counter(model=model_name, text=text)
+
+
+def truncate_text_by_tokens(text, max_tokens):
+    """Tronque un texte pour respecter une limite de tokens approximative."""
+    if estimate_tokens(text) <= max_tokens:
+        return text, False
+
+    words = text.split()
+    low, high = 0, len(words)
+    best_text = ""
+
+    while low < high:
+        mid = (low + high) // 2
+        candidate = " ".join(words[:mid])
+        if estimate_tokens(candidate) <= max_tokens:
+            best_text = candidate
+            low = mid + 1
+        else:
+            high = mid
+
+    return best_text, True
 
 # ==========================================
 # 2. LOGIQUE MÉTIER
@@ -91,7 +121,7 @@ def process_files(selected_folder):
         "BCO": r".*BCO.*",
         "BDC": r".*BDC.*"
     }
-    
+
     # 2. Scan du disque
     all_files = scan_directory(selected_folder)
     if not all_files:
@@ -104,7 +134,7 @@ def process_files(selected_folder):
     # 3. Filtrage intelligent
     for label, regex_pattern in search_patterns.items():
         candidates = [f for f in all_files if re.search(regex_pattern, f['name'], re.IGNORECASE)]
-        
+
         if not candidates:
             logs.append(f"⚠️ Aucun fichier trouvé pour : {label}")
             continue
@@ -120,7 +150,7 @@ def process_files(selected_folder):
             seen_files.add(winner['name'])
             logs.append(f"✅ '{label}' -> **{winner['name']}** ({winner['date'].strftime('%d/%m/%Y')})")
         else:
-             logs.append(f"ℹ️ '{label}' -> Fichier déjà sélectionné ({winner['name']})")
+            logs.append(f"ℹ️ '{label}' -> Fichier déjà sélectionné ({winner['name']})")
 
     return selected_files, logs, None
 
@@ -134,7 +164,7 @@ st.title("📂 Scanner Automatique RBO/PTC/BCO")
 col_input, col_btn = st.columns([3, 1])
 with col_input:
     # Astuce : On peut mettre une valeur par défaut pour faciliter vos tests
-    default_path = os.path.join(os.getcwd(), "documents_types") 
+    default_path = os.path.join(os.getcwd(), "documents_types")
     folder_path = st.text_input("Chemin du dossier à analyser :", value=default_path)
 
 # Bouton d'action
@@ -146,13 +176,12 @@ if start_analysis:
     else:
         # A. BARRE DE PROGRESSION
         progress_bar = st.progress(0, text="Initialisation...")
-        
+
         # Etape 1 : Scan et Filtrage
         progress_bar.progress(20, text="Scan du répertoire et filtrage des dates...")
-        time.sleep(0.5) # Juste pour l'effet visuel
-        
+
         final_docs, logs, error = process_files(folder_path)
-        
+
         if error:
             st.error(error)
         elif not final_docs:
@@ -166,25 +195,37 @@ if start_analysis:
 
             # Etape 2 : Extraction et Calculs
             progress_bar.progress(50, text="Extraction du texte et calcul des tokens...")
-            
+
             # Construction du contexte
             full_context = ""
             total_input_tokens = 0
-            
+            token_limit_reached = False
+
             for doc in final_docs:
-                doc_text = f"\n--- DOCUMENT: {doc['name']} ---\n{doc['content']}\n"
-                full_context += doc_text
-                # Calcul tokens par fichier
-                doc['tokens'] = estimate_tokens(doc['content'])
-                total_input_tokens += doc['tokens']
+                remaining_budget = max_input_tokens - total_input_tokens
+                if remaining_budget <= 0:
+                    token_limit_reached = True
+                    logs.append(f"⛔️ Limite de {max_input_tokens} tokens d'entrée atteinte, les documents suivants sont ignorés.")
+                    break
+
+                truncated_content, was_truncated = truncate_text_by_tokens(doc["content"], remaining_budget)
+                doc_tokens = estimate_tokens(truncated_content)
+                doc['tokens'] = doc_tokens
+                doc_context = f"\n--- DOCUMENT: {doc['name']} ---\n{truncated_content}\n"
+                full_context += doc_context
+                total_input_tokens += doc_tokens
+
+                if was_truncated:
+                    token_limit_reached = True
+                    logs.append(f"⚠️ Contexte tronqué pour {doc['name']} afin de rester sous {max_input_tokens} tokens.")
 
             # Etape 3 : Affichage Tableau Recap
             progress_bar.progress(70, text="Préparation de la synthèse...")
-            
+
             st.subheader("📊 Fichiers analysés")
             df = pd.DataFrame(final_docs)
             st.dataframe(
-                df[['name', 'date', 'tokens']], 
+                df[['name', 'date', 'tokens']],
                 column_config={
                     "name": "Nom du fichier",
                     "date": "Date modif.",
@@ -192,19 +233,21 @@ if start_analysis:
                 },
                 width="stretch"
             )
-            
+
             st.info(f"💰 Total Tokens en entrée : **{total_input_tokens}**")
+            if token_limit_reached:
+                st.warning("La limite de tokens d'entrée a été atteinte. Certains documents ont pu être tronqués ou ignorés.")
 
             # Etape 4 : Appel LLM
             progress_bar.progress(85, text="Interrogation de l'IA (Patience)...")
-            
+
             system_prompt = """
             Tu es un chef de projet expert en analyse de projets IT.
             Fais une synthèse structurée des documents fournis (RBO, PTC, BCO, BDC).
             Pour chaque type de document trouvé, extrais les points clés, les montants financiers et les alertes.
             Si un type de document manque, indique-le.
             """
-            
+
             try:
                 response = completion(
                     model=model_name,
@@ -213,20 +256,22 @@ if start_analysis:
                         {"role": "user", "content": full_context}
                     ]
                 )
-                
+
                 ai_reply = response.choices[0].message.content
                 output_tokens = response.usage.completion_tokens
-                
+
                 progress_bar.progress(100, text="Terminé !")
-                
+
                 col_res1, col_res2 = st.columns([3, 1])
                 with col_res1:
                     st.subheader("🧠 Synthèse Générale")
                     st.markdown(ai_reply)
-                
+
                 with col_res2:
                     st.metric("Tokens Réponse", output_tokens)
                     st.metric("Total Session", total_input_tokens + output_tokens)
 
             except Exception as e:
-                st.error(f"Erreur lors de l'appel IA : {e}")
+                progress_bar.progress(100, text="Erreur")
+                st.error("Erreur lors de l'appel IA. Détails techniques ci-dessous :")
+                st.code(str(e))
