@@ -190,7 +190,7 @@ if start_analysis:
                     "date": "Date modif.",
                     "tokens": st.column_config.NumberColumn("Tokens (Coût)", format="%d")
                 },
-                use_container_width=True
+                width="stretch"
             )
             
             st.info(f"💰 Total Tokens en entrée : **{total_input_tokens}**")
@@ -199,7 +199,7 @@ if start_analysis:
             progress_bar.progress(85, text="Interrogation de l'IA (Patience)...")
             
             system_prompt = """
-            Tu es un assistant expert en analyse de projets IT.
+            Tu es un chef de projet expert en analyse de projets IT.
             Fais une synthèse structurée des documents fournis (RBO, PTC, BCO, BDC).
             Pour chaque type de document trouvé, extrais les points clés, les montants financiers et les alertes.
             Si un type de document manque, indique-le.
