@@ -17,3 +17,6 @@ env/
 # --- IDE (optionnel mais recommandé) ---
 .vscode/
 .idea/
+
+# --- Dossier Document clients ----
+documents_types/
