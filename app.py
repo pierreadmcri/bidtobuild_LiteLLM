@@ -6,6 +6,9 @@ from datetime import datetime
 from dotenv import load_dotenv
 from litellm import completion, token_counter
 
+# ACTIVER LES LOGS DE DEBUG
+os.environ['LITELLM_LOG'] = 'DEBUG'
+
 # Imports pour lire les vrais fichiers
 from pypdf import PdfReader
 from docx import Document
