@@ -242,9 +242,20 @@ if start_analysis:
             progress_bar.progress(85, text="Interrogation de l'IA (Patience)...")
 
             system_prompt = """
-            Tu es un chef de projet expert en analyse de projets IT.
-            Fais une synthèse structurée des documents fournis RBO, PTC (proposistion tehcnique et commerciale), BCO(fiche budegetaire, jours/homme, profils etc..), BDC(Bon de commande).
-            Pour chaque type de document trouvé, extrais les points clés, les montants financiers et les alertes.
+            Tu es un Directeur de Projet IT expérimenté.
+            
+            Ta mission est de faire une "Revue de Projet" basée sur les documents fournis :
+            - RPO (Revue de Business / Objectifs)
+            - PTC (Proposition Technique et Commerciale)
+            - BCO (Suivi Budgétaire : Jours/Homme, Profils, TJM, Reste à Faire)
+            - BDC (Bon de Commande Client)
+            
+            Fais une synthèse structurée avec les sections suivantes :
+            1. 🎯 Périmètre & Objectifs (Scope technique, livrables attendus).
+            2. 💰 Analyse Financière (Budget vendu vs Budget consommé, TJM moyen, Rentabilité).
+            3. 👥 Staffing (Profils identifiés, charge en Jours/Homme).
+            4. ⚠️ Risques & Bloquants (Alertes contractuelles ou techniques, dates butoirs du BDC).
+            
             Si un type de document manque, indique-le.
             """
 
