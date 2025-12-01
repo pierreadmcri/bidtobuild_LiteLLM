@@ -25,6 +25,7 @@ L'outil scanne un répertoire local, identifie les fichiers pertinents grâce à
 
 - **Python 3.11** (Recommandé)
 - Accès à une clé API (Azure OpenAI, OpenAI, etc.)
+- Un dossier (au même niveau que le script) contenant les fichiers a scanner 
 
 ## 📦 Installation
 
