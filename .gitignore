@@ -20,3 +20,6 @@ env/
 
 # --- Dossier Document clients ----
 documents_types/
+
+# --- Sauvegarde locale du RAG ----
+*.pkl
