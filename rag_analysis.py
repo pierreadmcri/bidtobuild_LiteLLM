@@ -317,7 +317,7 @@ with st.sidebar:
     """)
 
 # --- MAIN ---
-st.title("📂 Analyseur de Projets IT (RAG Optimisé)")
+st.title("📂 Analyseur de Projets IT (RAG)")
 st.markdown("Analyse automatique des documents **RBO, PTC, BCO, BDC**.")
 
 col1, col2 = st.columns([3, 1])
