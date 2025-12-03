@@ -19,7 +19,7 @@ from docx import Document
 
 load_dotenv()
 model_name = os.getenv("MODEL_NAME", "azure/gpt-4.1-mini")
-max_input_tokens = int(os.getenv("MAX_INPUT_TOKENS", 30000))
+max_input_tokens = int(os.getenv("MAX_INPUT_TOKENS", 100000))
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt"}
 
 # Configuration de la page
