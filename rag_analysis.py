@@ -455,7 +455,7 @@ with col1:
 with col2:
     st.write("")
     st.write("")
-    run_btn = st.button("🚀 Analyser", type="primary", use_container_width=True)
+    run_btn = st.button("🚀 Analyser", type="primary", width='stretch')
 
 if run_btn:
     if not folder_path or not os.path.exists(folder_path):
@@ -482,7 +482,7 @@ if run_btn:
         # Affichage Stats
         if stats:
             with st.expander("📊 Voir les détails de l'indexation"):
-                st.dataframe(pd.DataFrame(stats), use_container_width=True)
+                st.dataframe(pd.DataFrame(stats), width='stretch')
 
         # --- PHASE 2 : RECHERCHE (RAG) ---
         # Ici on n'injecte PAS de requête utilisateur explicite :
