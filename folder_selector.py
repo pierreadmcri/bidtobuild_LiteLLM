@@ -64,31 +64,40 @@ def folder_selector(default_path: str = None, key: str = "folder_selector") -> s
     """
     st.markdown("### 📂 Sélection du dossier")
 
-    # Initialiser le session state avec la valeur par défaut si nécessaire
-    if f"{key}_textinput" not in st.session_state:
-        st.session_state[f"{key}_textinput"] = default_path or ""
+    # Initialiser l'état pour stocker le chemin sélectionné via le dialogue
+    if f"{key}_selected" not in st.session_state:
+        st.session_state[f"{key}_selected"] = default_path or ""
 
     col1, col2 = st.columns([5, 1])
 
-    with col1:
-        folder_path = st.text_input(
-            "Chemin du dossier à analyser :",
-            placeholder="/chemin/vers/votre/dossier",
-            key=f"{key}_textinput",
-            label_visibility="collapsed"
-        )
-
-    # Bouton pour ouvrir le dialogue de fichiers
+    # Bouton pour ouvrir le dialogue de fichiers (doit être AVANT le text_input)
     with col2:
         if try_import_tkinter():
             if st.button("📁 Parcourir", key=f"{key}_browse", help="Ouvrir un dialogue de sélection", use_container_width=True):
                 dialog_path = open_folder_dialog()
                 if dialog_path:
-                    st.session_state[f"{key}_textinput"] = dialog_path
+                    # Stocker dans un état séparé
+                    st.session_state[f"{key}_selected"] = dialog_path
                     st.rerun()
         else:
             st.info("⚠️", icon="⚠️")
             st.caption("Installer tkinter pour activer le bouton Parcourir")
+
+    with col1:
+        # Utiliser la valeur de l'état sélectionné
+        current_value = st.session_state[f"{key}_selected"]
+
+        folder_path = st.text_input(
+            "Chemin du dossier à analyser :",
+            value=current_value,
+            placeholder="/chemin/vers/votre/dossier",
+            key=f"{key}_textinput",
+            label_visibility="collapsed"
+        )
+
+        # Mettre à jour l'état sélectionné si l'utilisateur tape manuellement
+        if folder_path != current_value:
+            st.session_state[f"{key}_selected"] = folder_path
 
     # Afficher des informations sur le dossier sélectionné
     if folder_path and folder_path.strip():
