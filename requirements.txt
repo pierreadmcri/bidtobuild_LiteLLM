@@ -5,3 +5,9 @@ litellm
 pypdf
 python-docx
 tiktoken
+numpy
+
+# Tests (optionnel)
+pytest>=7.0.0
+pytest-mock>=3.10.0
+pytest-cov>=4.0.0

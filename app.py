@@ -3,11 +3,20 @@ import pandas as pd
 import re
 import os
 from datetime import datetime
-from dotenv import load_dotenv
-from litellm import completion, token_counter
+from pathlib import Path
 
-# ACTIVER LES LOGS DE DEBUG
-os.environ['LITELLM_LOG'] = 'DEBUG'
+# Imports locaux
+import config
+from utils import (
+    validate_file_path,
+    validate_file_size,
+    safe_completion,
+    estimate_tokens,
+    load_prompt,
+    ValidationError,
+    FileTooLargeError,
+    logger
+)
 
 # Imports pour lire les vrais fichiers
 from pypdf import PdfReader
@@ -17,10 +26,21 @@ from docx import Document
 # 0. CONFIGURATION
 # ==========================================
 
-load_dotenv()
-model_name = os.getenv("MODEL_NAME", "azure/gpt-4.1-mini")
-max_input_tokens = int(os.getenv("MAX_INPUT_TOKENS", 100000))
-ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt"}
+# Configuration du niveau de log LiteLLM
+os.environ['LITELLM_LOG'] = config.LITELLM_LOG_LEVEL
+
+# Configuration Azure
+for var in config.REQUIRED_ENV_VARS:
+    value = os.getenv(var)
+    if not value:
+        st.error(f"❌ Variable d'environnement manquante : {var}")
+        st.info("Vérifiez votre fichier `.env`.")
+        st.stop()
+    os.environ[var] = value
+
+model_name = config.MODEL_NAME
+max_input_tokens = config.MAX_INPUT_TOKENS
+ALLOWED_EXTENSIONS = config.ALLOWED_EXTENSIONS
 
 # Configuration de la page
 st.set_page_config(page_title="Scanner Local Documents", page_icon="📂", layout="wide")
@@ -30,9 +50,28 @@ st.set_page_config(page_title="Scanner Local Documents", page_icon="📂", layou
 # ==========================================
 
 def read_file_content(filepath):
-    """Lit le contenu texte d'un fichier selon son extension."""
+    """
+    Lit le contenu texte d'un fichier selon son extension.
+
+    Args:
+        filepath: Chemin du fichier à lire
+
+    Returns:
+        Contenu du fichier ou message d'erreur
+    """
     ext = os.path.splitext(filepath)[1].lower()
     content = ""
+
+    # Validation de la taille du fichier
+    try:
+        file_path = Path(filepath)
+        validate_file_size(file_path)
+    except FileTooLargeError as e:
+        logger.warning(f"Fichier trop volumineux ignoré : {filepath}")
+        return f"[Alerte : {str(e)}]"
+    except Exception as e:
+        logger.error(f"Erreur de validation : {e}")
+        return f"[Erreur de validation : {str(e)}]"
 
     try:
         if ext == ".pdf":
@@ -50,46 +89,78 @@ def read_file_content(filepath):
             with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
         else:
+            logger.warning(f"Format non supporté : {ext}")
             return f"[Format {ext} non supporté]"
+
+        logger.info(f"Fichier lu avec succès : {filepath}")
+
+    except FileNotFoundError:
+        logger.error(f"Fichier introuvable : {filepath}")
+        return f"[Erreur : Fichier introuvable]"
+    except PermissionError:
+        logger.error(f"Permission refusée : {filepath}")
+        return f"[Erreur : Permission refusée]"
     except Exception as e:
+        logger.error(f"Erreur de lecture {filepath}: {str(e)}")
         return f"[Erreur de lecture : {str(e)}]"
 
     return content
 
 
 def scan_directory(directory_path, allowed_extensions=ALLOWED_EXTENSIONS):
-    """Scanne récursivement un dossier pour lister les fichiers autorisés."""
+    """
+    Scanne récursivement un dossier pour lister les fichiers autorisés.
+
+    Args:
+        directory_path: Chemin du dossier à scanner
+        allowed_extensions: Set des extensions autorisées
+
+    Returns:
+        Liste de dictionnaires contenant les métadonnées des fichiers
+
+    Raises:
+        ValidationError: Si le chemin est invalide
+    """
     files_data = []
 
-    if not os.path.isdir(directory_path):
+    # Validation du chemin
+    try:
+        validated_path = validate_file_path(directory_path)
+    except ValidationError as e:
+        logger.error(f"Chemin invalide : {e}")
+        raise
+
+    if not validated_path.is_dir():
+        logger.warning(f"Le chemin n'est pas un dossier : {directory_path}")
         return []
 
-    for root_dir, _, files in os.walk(directory_path):
+    for root_dir, _, files in os.walk(validated_path):
         for filename in files:
             ext = os.path.splitext(filename)[1].lower()
             if ext not in allowed_extensions:
                 continue
+
             filepath = os.path.join(root_dir, filename)
+
             if not os.path.isfile(filepath):
                 continue
 
-            stats = os.stat(filepath)
-            mod_time = datetime.fromtimestamp(stats.st_mtime)
+            try:
+                stats = os.stat(filepath)
+                mod_time = datetime.fromtimestamp(stats.st_mtime)
 
-            files_data.append({
-                "name": filename,
-                "path": filepath,
-                "date": mod_time,
-                "size": stats.st_size
-            })
+                files_data.append({
+                    "name": filename,
+                    "path": filepath,
+                    "date": mod_time,
+                    "size": stats.st_size
+                })
+            except Exception as e:
+                logger.warning(f"Impossible de lire les métadonnées de {filepath}: {e}")
+                continue
 
+    logger.info(f"Scan terminé : {len(files_data)} fichiers trouvés")
     return files_data
-
-
-def estimate_tokens(text):
-    """Estimation simple ou précise via tiktoken."""
-    # Note: token_counter de litellm est le plus précis
-    return token_counter(model=model_name, text=text)
 
 
 def truncate_text_by_tokens(text, max_tokens):
@@ -175,15 +246,32 @@ start_analysis = st.button("Lancer l'analyse complète", type="primary")
 
 if start_analysis:
     if not folder_path:
-        st.error("Veuillez entrer un chemin de dossier.")
+        st.error("⚠️ Veuillez entrer un chemin de dossier.")
     else:
+        # Validation du chemin avant traitement
+        try:
+            validate_file_path(folder_path)
+        except ValidationError as e:
+            st.error(f"❌ Chemin invalide : {e}")
+            logger.error(f"Validation du chemin échouée : {e}")
+            st.stop()
+
         # A. BARRE DE PROGRESSION
         progress_bar = st.progress(0, text="Initialisation...")
 
         # Etape 1 : Scan et Filtrage
         progress_bar.progress(20, text="Scan du répertoire et filtrage des dates...")
 
-        final_docs, logs, error = process_files(folder_path)
+        try:
+            final_docs, logs, error = process_files(folder_path)
+        except ValidationError as e:
+            st.error(f"❌ Erreur de validation : {e}")
+            logger.error(f"Erreur lors du traitement : {e}")
+            st.stop()
+        except Exception as e:
+            st.error(f"❌ Erreur inattendue : {e}")
+            logger.error(f"Erreur inattendue lors du traitement : {e}")
+            st.stop()
 
         if error:
             st.error(error)
@@ -244,30 +332,25 @@ if start_analysis:
             # Etape 4 : Appel LLM
             progress_bar.progress(85, text="Interrogation de l'IA (Patience)...")
 
-            system_prompt = """
-            Tu es un directeur de projet expert en analyse de projets IT.
-            
-            Fais une synthèse structurée des documents fournis: 
-            - RBO (Revue de Business / Objectifs)
-            - PTC (Proposition Technique et Commerciale)
-            - BCO (Suivi Budgétaire : Jours/Homme, Profils, TJM, Reste à Faire)
-            - BDC (Bon de Commande Client)
-        
-            Pour chaque type de document trouvé, extrais les points clés 🔑, les montants financiers💰 et les alertes 🚨.
-            Fais un recap.
-            ⚠️ Identifie les risques/points bloquants contractuels ou techniques.
-            Propose des précisions ou des ameliorations.
-
-            Si un type de document manque, indique-le.
-            """
+            # Chargement du prompt système depuis le fichier
+            try:
+                system_prompt = load_prompt("app_system_prompt.txt")
+            except Exception as e:
+                st.error(f"Impossible de charger le prompt système : {e}")
+                logger.error(f"Erreur chargement prompt : {e}")
+                system_prompt = "Tu es un expert en analyse de documents de projet IT."
 
             try:
-                response = completion(
+                # Utilisation de safe_completion avec retry automatique
+                response = safe_completion(
                     model=model_name,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": full_context}
-                    ]
+                    ],
+                    api_key=os.getenv("AZURE_API_KEY"),
+                    api_base=os.getenv("AZURE_API_BASE"),
+                    api_version=os.getenv("AZURE_API_VERSION")
                 )
 
                 ai_reply = response.choices[0].message.content
@@ -284,7 +367,18 @@ if start_analysis:
                     st.metric("Tokens Réponse", output_tokens)
                     st.metric("Total Session", total_input_tokens + output_tokens)
 
+            except ConnectionError as e:
+                progress_bar.progress(100, text="Erreur de connexion")
+                st.error("❌ Impossible de se connecter à l'API. Vérifiez votre connexion internet.")
+                logger.error(f"Erreur de connexion API : {e}")
+                st.code(str(e))
+            except PermissionError as e:
+                progress_bar.progress(100, text="Erreur d'authentification")
+                st.error("❌ Erreur d'authentification. Vérifiez votre clé API Azure.")
+                logger.error(f"Erreur d'authentification : {e}")
+                st.code(str(e))
             except Exception as e:
                 progress_bar.progress(100, text="Erreur")
-                st.error("Erreur lors de l'appel IA. Détails techniques ci-dessous :")
+                st.error("❌ Erreur lors de l'appel IA. Détails techniques ci-dessous :")
+                logger.error(f"Erreur inattendue lors de l'appel LLM : {e}")
                 st.code(str(e))

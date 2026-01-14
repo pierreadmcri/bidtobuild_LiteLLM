@@ -3,12 +3,25 @@ import pandas as pd
 import numpy as np
 import re
 import os
-import time
 import pickle
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
-from dotenv import load_dotenv
-from litellm import completion, token_counter, embedding
+from pathlib import Path
+
+# Imports locaux
+import config
+from utils import (
+    validate_file_path,
+    validate_file_size,
+    safe_completion,
+    safe_embedding,
+    estimate_tokens,
+    load_prompt,
+    rate_limiter,
+    ValidationError,
+    FileTooLargeError,
+    logger
+)
 
 # Imports pour lecture fichiers
 from pypdf import PdfReader
@@ -25,46 +38,54 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-load_dotenv()
+# Configuration du niveau de log LiteLLM
+os.environ['LITELLM_LOG'] = config.LITELLM_LOG_LEVEL
+
+# Configuration Azure
+for var in config.REQUIRED_ENV_VARS:
+    value = os.getenv(var)
+    if not value:
+        st.error(f"❌ Variable d'environnement manquante : {var}")
+        st.info("Vérifiez votre fichier `.env`.")
+        st.stop()
+    os.environ[var] = value
 
 # --- CONSTANTES & CONFIG ---
-CACHE_FILE = "vector_store_cache.pkl"   # Fichier de sauvegarde locale
-NB_WORKERS = 4                          # Nombre d'appels simultanés vers Azure (Attention Rate Limit)
-BATCH_SIZE = 10                         # Taille des lots d'embeddings
+CACHE_FILE = config.CACHE_FILE
+NB_WORKERS = config.NB_WORKERS
+BATCH_SIZE = config.BATCH_SIZE
 
-# --- CONFIGURATION AZURE ---
-model_name = os.getenv("MODEL_NAME", "azure/gpt-4o-mini")
-embedding_model_name = os.getenv("EMBEDDING_MODEL_NAME", "azure/text-embedding-3-small")
-
-required_env_vars = ["AZURE_API_KEY", "AZURE_API_BASE", "AZURE_API_VERSION"]
-missing_vars = [var for var in required_env_vars if not os.getenv(var)]
-
-if missing_vars:
-    st.error(f"❌ Configuration manquante : {', '.join(missing_vars)}")
-    st.info("Vérifiez votre fichier `.env`.")
-    st.stop()
-
-# Configuration LiteLLM
-for var in required_env_vars:
-    os.environ[var] = os.getenv(var)
-
-os.environ["LITELLM_LOG"] = "ERROR"  # Silence les logs sauf erreurs
+model_name = config.MODEL_NAME
+embedding_model_name = config.EMBEDDING_MODEL_NAME
 
 # ==========================================
 # 1. FONCTIONS UTILITAIRES
 # ==========================================
 
-def estimate_tokens(text: str) -> int:
-    """Estimation rapide du nombre de tokens (approx)."""
-    try:
-        return max(len(text) // 4, 1)
-    except Exception:
-        return 0
-
 def read_file_content(filepath):
-    """Lecture robuste PDF/DOCX/TXT."""
+    """
+    Lecture robuste PDF/DOCX/TXT avec validation de taille.
+
+    Args:
+        filepath: Chemin du fichier à lire
+
+    Returns:
+        Contenu du fichier ou message d'erreur
+    """
     ext = os.path.splitext(filepath)[1].lower()
     content = ""
+
+    # Validation de la taille du fichier
+    try:
+        file_path = Path(filepath)
+        validate_file_size(file_path)
+    except FileTooLargeError as e:
+        logger.warning(f"Fichier trop volumineux ignoré : {filepath}")
+        return f"[Alerte : {str(e)}]"
+    except Exception as e:
+        logger.error(f"Erreur de validation : {e}")
+        return f"[Erreur de validation : {str(e)}]"
+
     try:
         if ext == ".pdf":
             reader = PdfReader(filepath)
@@ -72,25 +93,59 @@ def read_file_content(filepath):
                 text = page.extract_text()
                 if text:
                     content += text + "\n"
+            if not content.strip():
+                return "[Alerte : Aucun texte lisible extrait du PDF.]"
         elif ext == ".docx":
             doc = Document(filepath)
             content = "\n".join([para.text for para in doc.paragraphs])
         elif ext == ".txt":
             with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
+        else:
+            logger.warning(f"Format non supporté : {ext}")
+            return f"[Format {ext} non supporté]"
+
+        logger.info(f"Fichier lu avec succès : {filepath}")
         return content
+
+    except FileNotFoundError:
+        logger.error(f"Fichier introuvable : {filepath}")
+        return f"[Erreur : Fichier introuvable]"
+    except PermissionError:
+        logger.error(f"Permission refusée : {filepath}")
+        return f"[Erreur : Permission refusée]"
     except Exception as e:
+        logger.error(f"Erreur de lecture {filepath}: {str(e)}")
         return f"[Erreur lecture: {str(e)}]"
 
 def scan_directory(directory_path):
-    """Scan récursif des fichiers."""
+    """
+    Scan récursif des fichiers avec validation.
+
+    Args:
+        directory_path: Chemin du dossier à scanner
+
+    Returns:
+        Liste de dictionnaires contenant les métadonnées des fichiers
+
+    Raises:
+        ValidationError: Si le chemin est invalide
+    """
     files_data = []
-    allowed_ext = {".pdf", ".docx", ".txt"}
-    
-    if not os.path.isdir(directory_path):
+    allowed_ext = config.ALLOWED_EXTENSIONS
+
+    # Validation du chemin
+    try:
+        validated_path = validate_file_path(directory_path)
+    except ValidationError as e:
+        logger.error(f"Chemin invalide : {e}")
+        raise
+
+    if not validated_path.is_dir():
+        logger.warning(f"Le chemin n'est pas un dossier : {directory_path}")
         return []
 
-    for root, _, files in os.walk(directory_path):
+    for root, _, files in os.walk(validated_path):
         for filename in files:
             ext = os.path.splitext(filename)[1].lower()
             if ext in allowed_ext:
@@ -103,8 +158,11 @@ def scan_directory(directory_path):
                         "date": datetime.fromtimestamp(stats.st_mtime),
                         "size": stats.st_size
                     })
-                except Exception:
+                except Exception as e:
+                    logger.warning(f"Impossible de lire {filepath}: {e}")
                     continue
+
+    logger.info(f"Scan terminé : {len(files_data)} fichiers trouvés")
     return files_data
 
 # ==========================================
@@ -174,26 +232,32 @@ def smart_chunk_document(doc, max_tokens: int, overlap_tokens: int):
     return chunks
 
 def get_embeddings_batch(texts):
-    """Wrapper pour appel API Embedding avec gestion d'erreur."""
-    # Troncature de sécurité pour l'API (limite technique ~8191 tokens)
-    safe_texts = [t[:30000] for t in texts] 
-    
+    """
+    Wrapper pour appel API Embedding avec gestion d'erreur et retry.
+
+    Args:
+        texts: Liste de textes à embedder
+
+    Returns:
+        Liste d'embeddings ou vecteurs zéro en cas d'échec
+    """
     try:
-        response = embedding(
+        # Utilisation de safe_embedding qui gère le retry et rate limiting
+        embeddings = safe_embedding(
+            texts=texts,
             model=embedding_model_name,
-            input=safe_texts,
             api_key=os.getenv("AZURE_API_KEY"),
             api_base=os.getenv("AZURE_API_BASE"),
             api_version=os.getenv("AZURE_API_VERSION")
         )
-        # Extraction robuste (dict ou object)
-        if hasattr(response, "data"):
-            return [d["embedding"] if isinstance(d, dict) else d.embedding for d in response.data]
-        elif isinstance(response, dict) and "data" in response:
-            return [d["embedding"] for d in response["data"]]
-        return [[0.0] * 1536 for _ in texts]
-    except Exception:
-        return [[0.0] * 1536 for _ in texts]
+        return embeddings
+
+    except ConnectionError as e:
+        logger.error(f"Erreur de connexion lors de l'embedding : {e}")
+        return [[0.0] * config.EMBEDDING_DIMENSION for _ in texts]
+    except Exception as e:
+        logger.error(f"Erreur lors de l'embedding : {e}")
+        return [[0.0] * config.EMBEDDING_DIMENSION for _ in texts]
 
 # ==========================================
 # 3. MMR (Maximal Marginal Relevance)
@@ -333,7 +397,7 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
 
     def process_batch_worker(args):
         idx, batch_txt = args
-        time.sleep(0.05)  # Petit délai pour ménager l'API
+        rate_limiter.wait()  # Rate limiting centralisé
         emb = get_embeddings_batch(batch_txt)
         return idx, emb
 
@@ -458,9 +522,16 @@ with col2:
     run_btn = st.button("🚀 Analyser", type="primary", width='stretch')
 
 if run_btn:
-    if not folder_path or not os.path.exists(folder_path):
-        st.error("⚠️ Chemin invalide.")
+    if not folder_path:
+        st.error("⚠️ Veuillez entrer un chemin de dossier.")
     else:
+        # Validation du chemin avant traitement
+        try:
+            validate_file_path(folder_path)
+        except ValidationError as e:
+            st.error(f"❌ Chemin invalide : {e}")
+            logger.error(f"Validation du chemin échouée : {e}")
+            st.stop()
         # --- PHASE 1 : CHARGEMENT & INDEXATION ---
         with st.status("🔍 Analyse des documents...", expanded=True) as status:
             chunks, embeddings, logs, error, stats = load_and_process_data_optimized(
@@ -489,29 +560,18 @@ if run_btn:
         # le LLM sera guidé uniquement par le prompt système.
         try:
             # Embedding d'une "pseudo-question" neutre pour structurer la recherche
-            # (optionnel, mais tu peux garder un wording générique)
             neutral_query = "Analyse globale de ce projet IT (contexte, périmètre, finances, risques, recommandations)."
 
-            q_resp = embedding(
+            # Utilisation de safe_embedding avec retry automatique
+            q_vec_list = safe_embedding(
+                texts=[neutral_query],
                 model=embedding_model_name,
-                input=neutral_query,
                 api_key=os.getenv("AZURE_API_KEY"),
                 api_base=os.getenv("AZURE_API_BASE"),
                 api_version=os.getenv("AZURE_API_VERSION")
             )
-            
-            # Extraction sécurisée
-            if hasattr(q_resp, "data"):
-                data_item = q_resp.data[0]
-            else:
-                data_item = q_resp["data"][0]
-                
-            if hasattr(data_item, "embedding"):
-                q_vec = data_item.embedding
-            else:
-                q_vec = data_item["embedding"]
-                
-            q_emb = np.array(q_vec, dtype=float)
+
+            q_emb = np.array(q_vec_list[0], dtype=float)
 
             # Calcul Similarité Cosinus
             norm_q = np.linalg.norm(q_emb)
@@ -550,8 +610,13 @@ if run_btn:
 
             selected_chunks = [chunks[i] for i in top_indices]
 
+        except ConnectionError as e:
+            st.error(f"❌ Erreur de connexion lors de la recherche vectorielle : {e}")
+            logger.error(f"Erreur de connexion : {e}")
+            st.stop()
         except Exception as e:
-            st.error(f"Erreur Recherche Vectorielle : {e}")
+            st.error(f"❌ Erreur Recherche Vectorielle : {e}")
+            logger.error(f"Erreur recherche vectorielle : {e}")
             st.stop()
 
         # --- PHASE 3 : GENERATION REPONSE ---
@@ -565,36 +630,21 @@ if run_btn:
                 f"{c['content']}\n"
             )
 
-        system_prompt = """
-Tu es un directeur de projet expert en delivery IT.
-
-Tu reçois des extraits de documents de projet (RBO, PTC, BCO, BDC) au format suivant :
-### SEGMENT i
-[SOURCE: TYPE - NOM_FICHIER - DATE]
-CONTENU...
-
-RÈGLES :
-- Réponds UNIQUEMENT en t'appuyant sur les segments fournis.
-- Quand tu cites un chiffre ou un fait, indique la source au format [RBO], [PTC], [BCO], [BDC].
-- Si une information n'apparaît pas clairement dans les segments, répond "Non spécifié".
-- Si un type de document n'est pas présent (par ex. pas de BDC), précise-le explicitement.
-
-Produit une synthèse structurée en 5 parties :
-1. Contexte & Objectifs
-2. Périmètre Technique & Fonctionnel
-3. Synthèse Financière (Budget, TJM, RAF, BDC)
-4. Risques (Planning, Budget, Tech)
-5. Recommandations
-
-Style : professionnel, clair, synthétique, en français.
-"""
+        # Chargement du prompt système depuis le fichier
+        try:
+            system_prompt = load_prompt("rag_system_prompt.txt")
+        except Exception as e:
+            st.error(f"❌ Impossible de charger le prompt système : {e}")
+            logger.error(f"Erreur chargement prompt : {e}")
+            system_prompt = "Tu es un expert en analyse de documents de projet IT."
 
         st.divider()
         st.subheader("📝 Rapport d'Analyse")
-        
+
         with st.spinner("🧠 Rédaction du rapport en cours..."):
             try:
-                response = completion(
+                # Utilisation de safe_completion avec retry automatique
+                response = safe_completion(
                     model=model_name,
                     messages=[
                         {"role": "system", "content": system_prompt},
@@ -607,12 +657,22 @@ Style : professionnel, clair, synthétique, en français.
                     api_base=os.getenv("AZURE_API_BASE"),
                     api_version=os.getenv("AZURE_API_VERSION")
                 )
-                
+
                 ai_text = response.choices[0].message.content
                 st.markdown(ai_text)
-                
+
+            except ConnectionError as e:
+                st.error("❌ Impossible de se connecter à l'API. Vérifiez votre connexion internet.")
+                logger.error(f"Erreur de connexion API : {e}")
+                st.code(str(e))
+            except PermissionError as e:
+                st.error("❌ Erreur d'authentification. Vérifiez votre clé API Azure.")
+                logger.error(f"Erreur d'authentification : {e}")
+                st.code(str(e))
             except Exception as e:
-                st.error(f"Erreur LLM : {e}")
+                st.error(f"❌ Erreur LLM : {e}")
+                logger.error(f"Erreur inattendue lors de l'appel LLM : {e}")
+                st.code(str(e))
 
         # --- SOURCES ---
         st.markdown("---")
