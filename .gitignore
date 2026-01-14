@@ -33,6 +33,3 @@ __pycache__/
 
 # --- Logs ---
 *.log
-
-# --- Favoris utilisateur ---
-.folder_favorites.json
