@@ -16,6 +16,8 @@ from utils import (
     safe_completion,
     safe_embedding,
     estimate_tokens,
+    calculate_cost,
+    format_cost,
     load_prompt,
     rate_limiter,
     ValidationError,
@@ -553,7 +555,34 @@ if run_btn:
         # Affichage Stats
         if stats:
             with st.expander("📊 Voir les détails de l'indexation"):
-                st.dataframe(pd.DataFrame(stats), width='stretch')
+                st.dataframe(pd.DataFrame(stats), use_container_width=True)
+
+        # Calcul des tokens des chunks
+        total_chunks_tokens = sum(estimate_tokens(c['content']) for c in chunks)
+
+        st.markdown("---")
+        col_info1, col_info2, col_info3 = st.columns(3)
+
+        with col_info1:
+            st.metric(
+                label="📚 Documents indexés",
+                value=len([s for s in stats if s['État'] == '✅ Indexé']),
+                help="Nombre de documents analysés"
+            )
+
+        with col_info2:
+            st.metric(
+                label="✂️ Segments créés",
+                value=len(chunks),
+                help="Nombre total de chunks générés"
+            )
+
+        with col_info3:
+            st.metric(
+                label="🎫 Tokens indexés",
+                value=f"{total_chunks_tokens:,}",
+                help="Total de tokens dans tous les segments"
+            )
 
         # --- PHASE 2 : RECHERCHE (RAG) ---
         # Ici on n'injecte PAS de requête utilisateur explicite :
@@ -610,6 +639,36 @@ if run_btn:
 
             selected_chunks = [chunks[i] for i in top_indices]
 
+            # Calcul des tokens sélectionnés pour le contexte
+            selected_tokens = sum(estimate_tokens(c['content']) for c in selected_chunks)
+
+            st.markdown("---")
+            st.subheader("🔍 Résultats de la recherche")
+
+            col_search1, col_search2, col_search3 = st.columns(3)
+
+            with col_search1:
+                st.metric(
+                    label="📄 Segments sélectionnés",
+                    value=top_k_chunks,
+                    help="Nombre de chunks les plus pertinents"
+                )
+
+            with col_search2:
+                st.metric(
+                    label="🎫 Tokens contexte",
+                    value=f"{selected_tokens:,}",
+                    help="Tokens qui seront envoyés au LLM"
+                )
+
+            with col_search3:
+                context_percent = (selected_tokens / total_chunks_tokens) * 100 if total_chunks_tokens > 0 else 0
+                st.metric(
+                    label="📊 Utilisation",
+                    value=f"{context_percent:.1f}%",
+                    help="Pourcentage du contenu indexé utilisé"
+                )
+
         except ConnectionError as e:
             st.error(f"❌ Erreur de connexion lors de la recherche vectorielle : {e}")
             logger.error(f"Erreur de connexion : {e}")
@@ -659,7 +718,70 @@ if run_btn:
                 )
 
                 ai_text = response.choices[0].message.content
+                output_tokens = response.usage.completion_tokens
+                input_tokens_used = response.usage.prompt_tokens
+
                 st.markdown(ai_text)
+
+                # Récapitulatif final des tokens et coûts
+                st.markdown("---")
+                st.subheader("📊 Récapitulatif de la session")
+
+                # Calcul du coût
+                cost_info = calculate_cost(input_tokens_used, output_tokens, model_name)
+
+                col1, col2, col3, col4 = st.columns(4)
+
+                with col1:
+                    st.metric(
+                        label="📥 Tokens entrée",
+                        value=f"{input_tokens_used:,}",
+                        help="Tokens envoyés (prompt + contexte)"
+                    )
+
+                with col2:
+                    st.metric(
+                        label="📤 Tokens sortie",
+                        value=f"{output_tokens:,}",
+                        help="Tokens générés par le LLM"
+                    )
+
+                with col3:
+                    st.metric(
+                        label="🎫 Total tokens",
+                        value=f"{cost_info['total_tokens']:,}",
+                        help="Total de la génération"
+                    )
+
+                with col4:
+                    st.metric(
+                        label="💰 Coût génération",
+                        value=format_cost(cost_info['total_cost']),
+                        help=f"Modèle: {model_name}"
+                    )
+
+                # Calcul du coût total (embeddings + génération)
+                embedding_cost_info = calculate_cost(total_chunks_tokens, 0, embedding_model_name)
+                total_session_cost = embedding_cost_info['total_cost'] + cost_info['total_cost']
+
+                # Détail des coûts avec embeddings
+                with st.expander("💵 Détail complet des coûts"):
+                    st.write("**Coûts de génération (LLM)**")
+                    st.write(f"- Modèle: `{model_name}`")
+                    st.write(f"- Coût entrée: {format_cost(cost_info['input_cost'])} ({input_tokens_used:,} tokens)")
+                    st.write(f"- Coût sortie: {format_cost(cost_info['output_cost'])} ({output_tokens:,} tokens)")
+                    st.write(f"- Sous-total LLM: {format_cost(cost_info['total_cost'])}")
+
+                    st.write("")
+                    st.write("**Coûts d'indexation (Embeddings)**")
+                    st.write(f"- Modèle: `{embedding_model_name}`")
+                    st.write(f"- Tokens indexés: {total_chunks_tokens:,}")
+                    st.write(f"- Coût embeddings: {format_cost(embedding_cost_info['total_cost'])}")
+
+                    st.write("")
+                    st.write(f"**💰 Coût total de la session: {format_cost(total_session_cost)}**")
+
+                    st.info("💡 Les embeddings sont mis en cache. Les prochaines exécutions ne paieront que la génération LLM !")
 
             except ConnectionError as e:
                 st.error("❌ Impossible de se connecter à l'API. Vérifiez votre connexion internet.")

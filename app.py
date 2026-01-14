@@ -12,6 +12,8 @@ from utils import (
     validate_file_size,
     safe_completion,
     estimate_tokens,
+    calculate_cost,
+    format_cost,
     load_prompt,
     ValidationError,
     FileTooLargeError,
@@ -314,20 +316,61 @@ if start_analysis:
             progress_bar.progress(70, text="Préparation de la synthèse...")
 
             st.subheader("📊 Fichiers analysés")
-            df = pd.DataFrame(final_docs)
+
+            # Préparer les données pour l'affichage
+            display_data = []
+            for doc in final_docs:
+                size_kb = doc['size'] / 1024
+                display_data.append({
+                    'Fichier': doc['name'],
+                    'Date': doc['date'].strftime('%d/%m/%Y'),
+                    'Taille': f"{size_kb:.1f} KB",
+                    'Tokens': doc['tokens']
+                })
+
+            df = pd.DataFrame(display_data)
             st.dataframe(
-                df[['name', 'date', 'tokens']],
+                df,
                 column_config={
-                    "name": "Nom du fichier",
-                    "date": "Date modif.",
-                    "tokens": st.column_config.NumberColumn("Tokens (Coût)", format="%d")
+                    "Tokens": st.column_config.NumberColumn("Tokens", format="%d 🎫")
                 },
-                width="stretch"
+                hide_index=True,
+                use_container_width=True
             )
 
-            st.info(f"💰 Total Tokens en entrée : **{total_input_tokens}**")
+            # Calcul du coût estimé pour l'entrée
+            input_cost_info = calculate_cost(total_input_tokens, 0, model_name)
+
+            # Encadré récapitulatif avant l'appel API
+            st.markdown("---")
+            col_a, col_b, col_c = st.columns(3)
+
+            with col_a:
+                st.metric(
+                    label="📝 Tokens d'entrée",
+                    value=f"{total_input_tokens:,}",
+                    help="Nombre total de tokens qui seront envoyés au LLM"
+                )
+
+            with col_b:
+                st.metric(
+                    label="💰 Coût estimé entrée",
+                    value=format_cost(input_cost_info['input_cost']),
+                    help=f"Basé sur le modèle {model_name}"
+                )
+
+            with col_c:
+                utilization = (total_input_tokens / max_input_tokens) * 100
+                st.metric(
+                    label="📊 Utilisation limite",
+                    value=f"{utilization:.1f}%",
+                    help=f"Sur {max_input_tokens:,} tokens max"
+                )
+
             if token_limit_reached:
-                st.warning("La limite de tokens d'entrée a été atteinte. Certains documents ont pu être tronqués ou ignorés.")
+                st.warning("⚠️ La limite de tokens d'entrée a été atteinte. Certains documents ont pu être tronqués ou ignorés.")
+
+            st.markdown("---")
 
             # Etape 4 : Appel LLM
             progress_bar.progress(85, text="Interrogation de l'IA (Patience)...")
@@ -358,14 +401,53 @@ if start_analysis:
 
                 progress_bar.progress(100, text="Terminé !")
 
-                col_res1, col_res2 = st.columns([3, 1])
-                with col_res1:
-                    st.subheader("🧠 Synthèse Générale")
-                    st.markdown(ai_reply)
+                # Calcul du coût total
+                cost_info = calculate_cost(total_input_tokens, output_tokens, model_name)
 
-                with col_res2:
-                    st.metric("Tokens Réponse", output_tokens)
-                    st.metric("Total Session", total_input_tokens + output_tokens)
+                # Affichage de la synthèse
+                st.subheader("🧠 Synthèse Générale")
+                st.markdown(ai_reply)
+
+                # Encadré récapitulatif final des tokens et coûts
+                st.markdown("---")
+                st.subheader("📊 Récapitulatif de la session")
+
+                col1, col2, col3, col4 = st.columns(4)
+
+                with col1:
+                    st.metric(
+                        label="📥 Tokens entrée",
+                        value=f"{total_input_tokens:,}",
+                        help="Tokens envoyés au LLM"
+                    )
+
+                with col2:
+                    st.metric(
+                        label="📤 Tokens sortie",
+                        value=f"{output_tokens:,}",
+                        help="Tokens générés par le LLM"
+                    )
+
+                with col3:
+                    st.metric(
+                        label="🎫 Total tokens",
+                        value=f"{cost_info['total_tokens']:,}",
+                        help="Total de la session"
+                    )
+
+                with col4:
+                    st.metric(
+                        label="💰 Coût total",
+                        value=format_cost(cost_info['total_cost']),
+                        help=f"Modèle: {model_name}"
+                    )
+
+                # Détail des coûts
+                with st.expander("💵 Détail des coûts"):
+                    st.write(f"**Modèle utilisé:** `{model_name}`")
+                    st.write(f"- Coût entrée: {format_cost(cost_info['input_cost'])} ({total_input_tokens:,} tokens)")
+                    st.write(f"- Coût sortie: {format_cost(cost_info['output_cost'])} ({output_tokens:,} tokens)")
+                    st.write(f"- **Coût total: {format_cost(cost_info['total_cost'])}**")
 
             except ConnectionError as e:
                 progress_bar.progress(100, text="Erreur de connexion")

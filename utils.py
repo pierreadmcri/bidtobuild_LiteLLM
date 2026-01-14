@@ -283,6 +283,68 @@ def estimate_tokens(text: str, model: str = None) -> int:
         return max(len(text) // 4, 1)
 
 # ==========================================
+# CALCUL DES COÛTS
+# ==========================================
+
+def calculate_cost(input_tokens: int, output_tokens: int = 0, model: str = None) -> dict:
+    """
+    Calcule le coût estimé pour un appel API
+
+    Args:
+        input_tokens: Nombre de tokens en entrée
+        output_tokens: Nombre de tokens en sortie (0 par défaut)
+        model: Nom du modèle (optionnel, utilise MODEL_NAME par défaut)
+
+    Returns:
+        Dictionnaire avec coûts détaillés:
+        {
+            "input_cost": float,      # Coût entrée en USD
+            "output_cost": float,     # Coût sortie en USD
+            "total_cost": float,      # Coût total en USD
+            "input_tokens": int,      # Tokens entrée
+            "output_tokens": int,     # Tokens sortie
+            "total_tokens": int,      # Total tokens
+            "model": str              # Modèle utilisé
+        }
+    """
+    model = model or config.MODEL_NAME
+
+    # Récupérer les tarifs du modèle
+    pricing = config.PRICING.get(model, config.DEFAULT_PRICING)
+
+    # Calcul des coûts (tarifs par 1000 tokens)
+    input_cost = (input_tokens / 1000) * pricing["input"]
+    output_cost = (output_tokens / 1000) * pricing["output"]
+    total_cost = input_cost + output_cost
+
+    return {
+        "input_cost": input_cost,
+        "output_cost": output_cost,
+        "total_cost": total_cost,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+        "model": model
+    }
+
+def format_cost(cost: float) -> str:
+    """
+    Formate un coût en USD pour l'affichage
+
+    Args:
+        cost: Coût en USD
+
+    Returns:
+        Chaîne formatée (ex: "$0.0015" ou "$1.50")
+    """
+    if cost < 0.01:
+        return f"${cost:.6f}"
+    elif cost < 1.0:
+        return f"${cost:.4f}"
+    else:
+        return f"${cost:.2f}"
+
+# ==========================================
 # CHARGEMENT DES PROMPTS
 # ==========================================
 
