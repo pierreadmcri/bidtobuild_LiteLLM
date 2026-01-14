@@ -10,6 +10,7 @@ from pathlib import Path
 
 # Imports locaux
 import config
+from folder_selector import folder_selector
 from utils import (
     validate_file_path,
     validate_file_size,
@@ -513,15 +514,14 @@ with st.sidebar:
 st.title("📂 Analyseur de Projets IT (RAG)")
 st.markdown("Analyse automatique des documents **RBO, PTC, BCO, BDC**.")
 
-col1, col2 = st.columns([3, 1])
-with col1:
-    default_path = os.path.join(os.getcwd(), "documents_types")
-    folder_path = st.text_input("Dossier à analyser :", value=default_path)
+# Zone de sélection du dossier avec le nouveau composant
+default_path = os.path.join(os.getcwd(), "documents_types")
+folder_path = folder_selector(default_path=default_path, key="rag_folder")
 
-with col2:
-    st.write("")
-    st.write("")
-    run_btn = st.button("🚀 Analyser", type="primary", width='stretch')
+st.markdown("---")
+
+# Bouton d'action
+run_btn = st.button("🚀 Lancer l'analyse RAG", type="primary", use_container_width=True)
 
 if run_btn:
     if not folder_path:
