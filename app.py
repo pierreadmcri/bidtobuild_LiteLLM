@@ -7,7 +7,6 @@ from pathlib import Path
 
 # Imports locaux
 import config
-from folder_selector import folder_selector
 from utils import (
     validate_file_path,
     validate_file_size,
@@ -237,9 +236,13 @@ def process_files(selected_folder):
 
 st.title("📂 Scanner Automatique RBO/PTC/BCO")
 
-# Zone de sélection du dossier avec le nouveau composant
+# Zone de sélection du dossier
 default_path = os.path.join(os.getcwd(), "documents_types")
-folder_path = folder_selector(default_path=default_path, key="app_folder")
+folder_path = st.text_input(
+    "Chemin du dossier à analyser :",
+    value=default_path,
+    placeholder="/chemin/vers/votre/dossier"
+)
 
 st.markdown("---")
 
