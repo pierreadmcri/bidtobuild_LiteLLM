@@ -521,7 +521,7 @@ folder_path = folder_selector(default_path=default_path, key="rag_folder")
 st.markdown("---")
 
 # Bouton d'action
-run_btn = st.button("🚀 Lancer l'analyse RAG", type="primary", use_container_width=True)
+run_btn = st.button("🚀 Lancer l'analyse RAG", type="primary", width='stretch')
 
 if run_btn:
     if not folder_path:
@@ -555,7 +555,7 @@ if run_btn:
         # Affichage Stats
         if stats:
             with st.expander("📊 Voir les détails de l'indexation"):
-                st.dataframe(pd.DataFrame(stats), use_container_width=True)
+                st.dataframe(pd.DataFrame(stats), width='stretch')
 
         # Calcul des tokens des chunks
         total_chunks_tokens = sum(estimate_tokens(c['content']) for c in chunks)

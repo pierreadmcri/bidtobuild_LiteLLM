@@ -244,7 +244,7 @@ folder_path = folder_selector(default_path=default_path, key="app_folder")
 st.markdown("---")
 
 # Bouton d'action
-start_analysis = st.button("🚀 Lancer l'analyse complète", type="primary", use_container_width=True)
+start_analysis = st.button("🚀 Lancer l'analyse complète", type="primary", width='stretch')
 
 if start_analysis:
     if not folder_path:
@@ -335,7 +335,7 @@ if start_analysis:
                     "Tokens": st.column_config.NumberColumn("Tokens", format="%d 🎫")
                 },
                 hide_index=True,
-                use_container_width=True
+                width='stretch'
             )
 
             # Calcul du coût estimé pour l'entrée

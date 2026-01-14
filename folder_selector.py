@@ -73,7 +73,7 @@ def folder_selector(default_path: str = None, key: str = "folder_selector") -> s
     # Bouton pour ouvrir le dialogue de fichiers (doit être AVANT le text_input)
     with col2:
         if try_import_tkinter():
-            if st.button("📁 Parcourir", key=f"{key}_browse", help="Ouvrir un dialogue de sélection", use_container_width=True):
+            if st.button("📁 Parcourir", key=f"{key}_browse", help="Ouvrir un dialogue de sélection", width='stretch'):
                 dialog_path = open_folder_dialog()
                 if dialog_path:
                     # Stocker dans un état séparé
