@@ -10,7 +10,7 @@ load_dotenv()
 # CONFIGURATION AZURE / LLM
 # ==========================================
 
-MODEL_NAME = os.getenv("MODEL_NAME", "azure/gpt-4o-mini")
+MODEL_NAME = os.getenv("MODEL_NAME", "azure/gpt-4.1-mini")
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "azure/text-embedding-3-small")
 
 # Variables Azure obligatoires
@@ -90,6 +90,11 @@ PRICING = {
         "input": 0.00015,   # $0.15 / 1M tokens
         "output": 0.0006,   # $0.60 / 1M tokens
     },
+    # GPT-4.1 Mini (modèle déployé)
+    "azure/gpt-4.1-mini": {
+        "input": 0.00015,   # $0.15 / 1M tokens
+        "output": 0.0006,   # $0.60 / 1M tokens
+    },
     # GPT-4 Turbo
     "azure/gpt-4-turbo": {
         "input": 0.01,      # $10.00 / 1M tokens
@@ -120,7 +125,7 @@ PRICING = {
     },
 }
 
-# Tarif par défaut si modèle non trouvé (GPT-4o-mini)
+# Tarif par défaut si modèle non trouvé (GPT-4.1-mini)
 DEFAULT_PRICING = {
     "input": 0.00015,
     "output": 0.0006,

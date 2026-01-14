@@ -19,7 +19,7 @@ AZURE_API_VERSION="2024-02-01"
 
 ```bash
 # Modèles utilisés (par défaut)
-MODEL_NAME="azure/gpt-4o-mini"                      # Modèle de génération
+MODEL_NAME="azure/gpt-4.1-mini"                     # Modèle de génération
 EMBEDDING_MODEL_NAME="azure/text-embedding-3-small" # Modèle d'embeddings
 
 # Limites de sécurité
@@ -142,7 +142,7 @@ ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md"}
 
 ## 💰 Estimation des Coûts
 
-### Modèle par Défaut (gpt-4o-mini)
+### Modèle par Défaut (gpt-4.1-mini)
 
 | Scénario | Input Tokens | Output Tokens | Coût (USD) |
 |----------|--------------|---------------|------------|
