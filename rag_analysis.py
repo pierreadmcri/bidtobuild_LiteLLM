@@ -13,12 +13,14 @@ import config
 from utils import (
     validate_file_path, validate_file_size, safe_completion, safe_embedding,
     estimate_tokens, calculate_cost, format_cost, load_prompt,
-    rate_limiter, ValidationError, FileTooLargeError, logger
+    rate_limiter, ValidationError, FileTooLargeError, logger,
+    analyze_image_with_vision
 )
 
 # Imports lecture
 from pypdf import PdfReader
 from docx import Document
+import fitz  # PyMuPDF pour extraction d'images des PDFs
 
 # ==========================================
 # 0. CONFIGURATION & SETUP
@@ -54,7 +56,8 @@ embedding_model_name = config.EMBEDDING_MODEL_NAME
 
 def read_file_content(filepath):
     """
-    Lecture robuste PDF/DOCX/TXT avec validation de taille.
+    Lecture robuste PDF/DOCX/TXT/IMAGES avec validation de taille.
+    Pour les PDFs, extrait aussi les images et les analyse avec Vision API.
 
     Args:
         filepath: Chemin du fichier à lire
@@ -77,20 +80,90 @@ def read_file_content(filepath):
         return f"[Erreur de validation : {str(e)}]"
 
     try:
-        if ext == ".pdf":
+        # === IMAGES STANDALONE ===
+        if ext in [".jpg", ".jpeg", ".png"]:
+            logger.info(f"Analyse d'image : {filepath}")
+            if config.ENABLE_IMAGE_ANALYSIS:
+                description = analyze_image_with_vision(
+                    filepath,
+                    api_key=os.getenv("AZURE_API_KEY"),
+                    api_base=os.getenv("AZURE_API_BASE"),
+                    api_version=os.getenv("AZURE_API_VERSION")
+                )
+                content = f"[IMAGE: {os.path.basename(filepath)}]\n{description}\n"
+            else:
+                content = f"[IMAGE: {os.path.basename(filepath)} - analyse désactivée]\n"
+
+        # === PDFs AVEC EXTRACTION D'IMAGES ===
+        elif ext == ".pdf":
+            # Extraction du texte avec pypdf
             reader = PdfReader(filepath)
             for page in reader.pages:
                 text = page.extract_text()
                 if text:
                     content += text + "\n"
+
+            # Extraction des images avec PyMuPDF
+            if config.ENABLE_IMAGE_ANALYSIS:
+                try:
+                    doc = fitz.open(filepath)
+                    image_count = 0
+
+                    for page_num in range(len(doc)):
+                        page = doc[page_num]
+                        image_list = page.get_images(full=True)
+
+                        for img_index, img in enumerate(image_list):
+                            try:
+                                xref = img[0]
+                                base_image = doc.extract_image(xref)
+                                image_bytes = base_image["image"]
+                                image_ext = base_image["ext"]
+
+                                # Sauvegarder temporairement l'image
+                                temp_image_path = f"/tmp/temp_pdf_image_{page_num}_{img_index}.{image_ext}"
+                                with open(temp_image_path, "wb") as img_file:
+                                    img_file.write(image_bytes)
+
+                                # Analyser l'image
+                                description = analyze_image_with_vision(
+                                    temp_image_path,
+                                    prompt=f"Décris cette image extraite de la page {page_num + 1} d'un document PDF de projet IT.",
+                                    api_key=os.getenv("AZURE_API_KEY"),
+                                    api_base=os.getenv("AZURE_API_BASE"),
+                                    api_version=os.getenv("AZURE_API_VERSION")
+                                )
+
+                                content += f"\n[IMAGE PAGE {page_num + 1}]\n{description}\n"
+                                image_count += 1
+
+                                # Nettoyer le fichier temporaire
+                                os.remove(temp_image_path)
+
+                            except Exception as img_err:
+                                logger.warning(f"Erreur extraction image PDF page {page_num}: {img_err}")
+                                continue
+
+                    doc.close()
+                    if image_count > 0:
+                        logger.info(f"{image_count} image(s) extraite(s) et analysée(s) du PDF")
+
+                except Exception as pdf_img_err:
+                    logger.warning(f"Erreur lors de l'extraction d'images du PDF : {pdf_img_err}")
+
             if not content.strip():
                 return "[Alerte : Aucun texte lisible extrait du PDF.]"
+
+        # === DOCX ===
         elif ext == ".docx":
             doc = Document(filepath)
             content = "\n".join([para.text for para in doc.paragraphs])
+
+        # === TXT ===
         elif ext == ".txt":
             with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
+
         else:
             logger.warning(f"Format non supporté : {ext}")
             return f"[Format {ext} non supporté]"

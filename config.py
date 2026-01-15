@@ -12,6 +12,7 @@ load_dotenv()
 
 MODEL_NAME = os.getenv("MODEL_NAME", "azure/gpt-4.1-mini")
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "azure/text-embedding-3-small")
+VISION_MODEL_NAME = os.getenv("VISION_MODEL_NAME", "azure/gpt-4o")  # Modèle avec capacité Vision
 
 # Variables Azure obligatoires
 REQUIRED_ENV_VARS = ["AZURE_API_KEY", "AZURE_API_BASE", "AZURE_API_VERSION"]
@@ -31,7 +32,7 @@ MAX_FILE_SIZE_BYTES = int(os.getenv("MAX_FILE_SIZE_BYTES", 50 * 1024 * 1024))
 MAX_INPUT_TOKENS = int(os.getenv("MAX_INPUT_TOKENS", 100000))
 
 # Extensions autorisées
-ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt"}
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".jpg", ".jpeg", ".png"}
 
 # Chemins interdits (sécurité)
 FORBIDDEN_PATH_PATTERNS = [
@@ -72,6 +73,22 @@ DEFAULT_MMR_LAMBDA = 0.7
 
 # Dimension des embeddings (text-embedding-3-small)
 EMBEDDING_DIMENSION = 1536
+
+# ==========================================
+# CONFIGURATION VISION (IMAGES)
+# ==========================================
+
+# Taille maximale des images (en bytes) - 20 MB par défaut
+MAX_IMAGE_SIZE_BYTES = int(os.getenv("MAX_IMAGE_SIZE_BYTES", 20 * 1024 * 1024))
+
+# Résolution maximale pour redimensionnement (pour réduire coûts API)
+MAX_IMAGE_DIMENSION = int(os.getenv("MAX_IMAGE_DIMENSION", 2048))
+
+# Qualité JPEG après compression (1-100)
+IMAGE_QUALITY = int(os.getenv("IMAGE_QUALITY", 85))
+
+# Activer/désactiver l'analyse d'images
+ENABLE_IMAGE_ANALYSIS = os.getenv("ENABLE_IMAGE_ANALYSIS", "true").lower() == "true"
 
 # ==========================================
 # TARIFICATION AZURE OPENAI (USD)
