@@ -503,10 +503,19 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
 st.markdown("""
 <style>
     .stMetric {
-        background-color: #f0f2f6;
+        background-color: #1e2530;
         padding: 15px;
         border-radius: 10px;
-        border: 1px solid #e0e0e0;
+        border: 1px solid #3d4654;
+    }
+    .stMetric label {
+        color: #b8bcc5 !important;
+    }
+    .stMetric [data-testid="stMetricValue"] {
+        color: #ffffff !important;
+    }
+    .stMetric [data-testid="stMetricDelta"] {
+        color: #a0a6b0 !important;
     }
     .stButton button {
         border-radius: 8px;
