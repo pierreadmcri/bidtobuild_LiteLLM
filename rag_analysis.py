@@ -11,21 +11,12 @@ from pathlib import Path
 # Imports locaux
 import config
 from utils import (
-    validate_file_path,
-    validate_file_size,
-    safe_completion,
-    safe_embedding,
-    estimate_tokens,
-    calculate_cost,
-    format_cost,
-    load_prompt,
-    rate_limiter,
-    ValidationError,
-    FileTooLargeError,
-    logger
+    validate_file_path, validate_file_size, safe_completion, safe_embedding,
+    estimate_tokens, calculate_cost, format_cost, load_prompt,
+    rate_limiter, ValidationError, FileTooLargeError, logger
 )
 
-# Imports pour lecture fichiers
+# Imports lecture
 from pypdf import PdfReader
 from docx import Document
 
@@ -34,16 +25,14 @@ from docx import Document
 # ==========================================
 
 st.set_page_config(
-    page_title="RAG Analyse Pro - RBO/PTC/BCO/BDC",
+    page_title="RAG Analyse Pro",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Configuration du niveau de log LiteLLM
+# Configuration Log & Env
 os.environ['LITELLM_LOG'] = config.LITELLM_LOG_LEVEL
-
-# Configuration Azure
 for var in config.REQUIRED_ENV_VARS:
     value = os.getenv(var)
     if not value:
@@ -52,11 +41,10 @@ for var in config.REQUIRED_ENV_VARS:
         st.stop()
     os.environ[var] = value
 
-# --- CONSTANTES & CONFIG ---
+# Constantes
 CACHE_FILE = config.CACHE_FILE
 NB_WORKERS = config.NB_WORKERS
 BATCH_SIZE = config.BATCH_SIZE
-
 model_name = config.MODEL_NAME
 embedding_model_name = config.EMBEDDING_MODEL_NAME
 
@@ -323,14 +311,14 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
     """
     logs = []
     stats = []
-    
+
     # --- A. VERIFICATION CACHE DISQUE ---
     if os.path.exists(CACHE_FILE):
         try:
             with open(CACHE_FILE, "rb") as f:
                 saved_data = pickle.load(f)
             if (
-                saved_data.get("folder") == folder_path 
+                saved_data.get("folder") == folder_path
                 and saved_data.get("max_chunk_tokens") == max_chunk_tokens
                 and saved_data.get("overlap_tokens") == overlap_tokens
             ):
@@ -349,10 +337,10 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
 
     # --- B. SCAN ET LECTURE ---
     search_patterns = {
-        "RBO": r".*RBO.*", "PTC": r".*PTC.*", 
+        "RBO": r".*RBO.*", "PTC": r".*PTC.*",
         "BCO": r".*BCO.*", "BDC": r".*BDC.*"
     }
-    
+
     all_files = scan_directory(folder_path)
     if not all_files:
         return None, None, logs, "Dossier vide ou introuvable", []
@@ -384,7 +372,7 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
             "Nb Segments": len(doc_chunks),
             "État": "✅ Indexé"
         })
-    
+
     logs.append(f"✂️ Total segments générés : {len(all_chunks)}")
 
     if not all_chunks:
@@ -392,7 +380,7 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
 
     # --- D. EMBEDDINGS PARALLÈLES (MULTI-THREADING) ---
     texts = [c["content"] for c in all_chunks]
-    
+
     batches = []
     for i in range(0, len(texts), BATCH_SIZE):
         batches.append((i, texts[i:i+BATCH_SIZE]))
@@ -405,7 +393,7 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
 
     results = []
     progress_bar = st.progress(0, text="Calcul vectoriel en parallèle...")
-    
+
     with ThreadPoolExecutor(max_workers=NB_WORKERS) as executor:
         futures = list(executor.map(process_batch_worker, batches))
         for i, res in enumerate(futures):
@@ -444,157 +432,123 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
     return all_chunks, np_embeddings, logs, None, stats
 
 # ==========================================
-# 5. INTERFACE STREAMLIT
+# 5. INTERFACE STREAMLIT (REFONDUE UX/UI)
 # ==========================================
 
-# --- SIDEBAR ---
-with st.sidebar:
-    st.header("🎛️ Paramètres")
+# --- CSS PERSONNALISÉ POUR UN LOOK PLUS PRO ---
+st.markdown("""
+<style>
+    .stMetric {
+        background-color: #f0f2f6;
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid #e0e0e0;
+    }
+    .stButton button {
+        border-radius: 8px;
+        font-weight: bold;
+    }
+    h1 { color: #2c3e50; }
+    h2, h3 { color: #34495e; }
+</style>
+""", unsafe_allow_html=True)
 
-    if st.button("🗑️ Vider Cache & Recharger", type="secondary"):
+# --- SIDEBAR OPTIMISÉE ---
+with st.sidebar:
+    st.title("🎛️ Contrôle")
+
+    st.info("Ce module analyse vos documents RBO, PTC, BCO et BDC pour générer une synthèse structurée.")
+
+    # Section Reset bien visible
+    if st.button("🗑️ Vider le Cache", type="secondary", help="Force le rechargement complet des fichiers"):
         st.cache_resource.clear()
         if os.path.exists(CACHE_FILE):
             os.remove(CACHE_FILE)
+        st.toast("Cache vidé avec succès !", icon="🗑️")
         st.rerun()
 
-    st.markdown("### ⚙️ RAG - Chunking")
-    max_chunk_tokens = st.slider(
-        "Taille des segments (tokens approx.)",
-        min_value=200,
-        max_value=1500,
-        value=600,
-        step=50,
-    )
-    overlap_tokens = st.slider(
-        "Overlap entre segments (tokens)",
-        min_value=0,
-        max_value=400,
-        value=120,
-        step=20,
-    )
+    st.markdown("---")
 
-    st.markdown("### 🔎 RAG - Retrieval")
-    top_k_chunks = st.slider(
-        "Nombre de segments utilisés (Top-K)",
-        min_value=3,
-        max_value=20,
-        value=6,
-        step=1,
-    )
-    sim_threshold = st.slider(
-        "Seuil de similarité minimum",
-        min_value=0.0,
-        max_value=1.0,
-        value=0.15,
-        step=0.01,
-    )
+    # Masquer la complexité technique
+    with st.expander("🔧 Configuration Avancée", expanded=False):
+        st.caption("Paramètres du découpage (Chunking)")
+        max_chunk_tokens = st.slider("Taille segments", 200, 1500, 600, 50)
+        overlap_tokens = st.slider("Overlap", 0, 400, 120, 20)
 
-    use_mmr = st.checkbox("Activer MMR (diversification)", value=True)
-    lambda_mmr = st.slider(
-        "MMR λ (pertinence vs diversité)",
-        min_value=0.1,
-        max_value=0.9,
-        value=0.7,
-        step=0.05,
-    )
+        st.caption("Paramètres de recherche (Retrieval)")
+        top_k_chunks = st.slider("Top-K segments", 3, 20, 6)
+        sim_threshold = st.slider("Seuil similarité", 0.0, 1.0, 0.15, 0.01)
 
-    st.info(
-        f"""
-**Mode Turbo** 🚀  
-- Taille segment ≈ {max_chunk_tokens} tokens  
-- Overlap ≈ {overlap_tokens} tokens  
-- Top-K = {top_k_chunks}  
-- Seuil sim. = {sim_threshold:.2f}  
-- MMR = {"ON" if use_mmr else "OFF"} (λ={lambda_mmr:.2f})
-"""
-    )
+        use_mmr = st.checkbox("Activer MMR (Diversité)", value=True)
+        if use_mmr:
+            lambda_mmr = st.slider("MMR λ", 0.1, 0.9, 0.7)
+        else:
+            lambda_mmr = 0.7 # Valeur par défaut si désactivé
 
-# --- MAIN ---
-st.title("📂 Analyseur de Projets IT (RAG)")
-st.markdown("Analyse automatique des documents **RBO, PTC, BCO, BDC**.")
-
-# Zone de sélection du dossier
-default_path = os.path.join(os.getcwd(), "documents_types")
-folder_path = st.text_input(
-    "Chemin du dossier à analyser :",
-    value=default_path,
-    placeholder="/chemin/vers/votre/dossier"
-)
+# --- MAIN HEADER ---
+col_logo, col_title = st.columns([1, 6])
+with col_logo:
+    st.markdown("# ⚡")
+with col_title:
+    st.title("Analyseur de Projets IT")
+    st.markdown("RAG Intelligent • RBO / PTC / BCO / BDC")
 
 st.markdown("---")
 
-# Bouton d'action
-run_btn = st.button("🚀 Lancer l'analyse RAG", type="primary", width='stretch')
+# --- ZONE DE SÉLECTION DU DOSSIER ---
+col_input, col_btn = st.columns([3, 1])
+with col_input:
+    default_path = os.path.join(os.getcwd(), "documents_types")
+    folder_path = st.text_input(
+        "📂 Chemin du dossier à analyser",
+        value=default_path,
+        placeholder="/chemin/absolu/vers/vos/documents"
+    )
+with col_btn:
+    st.write("") # Spacer pour aligner le bouton
+    st.write("")
+    run_btn = st.button("🚀 Lancer l'analyse", type="primary", width='stretch')
 
+# --- LOGIQUE D'EXÉCUTION ---
 if run_btn:
     if not folder_path:
-        st.error("⚠️ Veuillez entrer un chemin de dossier.")
-    else:
-        # Validation du chemin avant traitement
+        st.error("⚠️ Veuillez entrer un chemin de dossier valide.")
+        st.stop()
+
+    # 1. INDEXATION (Status Container)
+    with st.status("🔍 Analyse et indexation des documents...", expanded=True) as status:
         try:
             validate_file_path(folder_path)
-        except ValidationError as e:
-            st.error(f"❌ Chemin invalide : {e}")
-            logger.error(f"Validation du chemin échouée : {e}")
-            st.stop()
-        # --- PHASE 1 : CHARGEMENT & INDEXATION ---
-        with st.status("🔍 Analyse des documents...", expanded=True) as status:
             chunks, embeddings, logs, error, stats = load_and_process_data_optimized(
-                folder_path,
-                max_chunk_tokens=max_chunk_tokens,
-                overlap_tokens=overlap_tokens,
+                folder_path, max_chunk_tokens, overlap_tokens
             )
-            
+
+            # Affichage des logs importants en temps réel
             for log in logs:
-                st.markdown(log)
-                
+                st.text(log.replace("**", "").replace("✅", "  >").replace("⚠️", "  !"))
+
             if error:
-                status.update(label="❌ Erreur", state="error")
+                status.update(label="❌ Erreur critique", state="error")
                 st.error(error)
                 st.stop()
             else:
-                status.update(label="✅ Indexation terminée !", state="complete", expanded=False)
+                status.update(label="✅ Documents indexés et prêts !", state="complete", expanded=False)
 
-        # Affichage Stats
-        if stats:
-            with st.expander("📊 Voir les détails de l'indexation"):
-                st.dataframe(pd.DataFrame(stats), width='stretch')
+        except ValidationError as e:
+            status.update(label="❌ Chemin invalide", state="error")
+            st.error(f"Erreur de validation : {e}")
+            st.stop()
+        except Exception as e:
+            status.update(label="❌ Erreur technique", state="error")
+            st.error(f"Erreur : {e}")
+            st.stop()
 
-        # Calcul des tokens des chunks
-        total_chunks_tokens = sum(estimate_tokens(c['content']) for c in chunks)
+    # 2. RECHERCHE VECTORIELLE
+    try:
+        # Embedding query neutre
+        neutral_query = "Analyse globale de ce projet IT (contexte, périmètre, finances, risques, recommandations)."
 
-        st.markdown("---")
-        col_info1, col_info2, col_info3 = st.columns(3)
-
-        with col_info1:
-            st.metric(
-                label="📚 Documents indexés",
-                value=len([s for s in stats if s['État'] == '✅ Indexé']),
-                help="Nombre de documents analysés"
-            )
-
-        with col_info2:
-            st.metric(
-                label="✂️ Segments créés",
-                value=len(chunks),
-                help="Nombre total de chunks générés"
-            )
-
-        with col_info3:
-            st.metric(
-                label="🎫 Tokens indexés",
-                value=f"{total_chunks_tokens:,}",
-                help="Total de tokens dans tous les segments"
-            )
-
-        # --- PHASE 2 : RECHERCHE (RAG) ---
-        # Ici on n'injecte PAS de requête utilisateur explicite :
-        # le LLM sera guidé uniquement par le prompt système.
-        try:
-            # Embedding d'une "pseudo-question" neutre pour structurer la recherche
-            neutral_query = "Analyse globale de ce projet IT (contexte, périmètre, finances, risques, recommandations)."
-
-            # Utilisation de safe_embedding avec retry automatique
+        with st.spinner("🧠 Recherche des passages pertinents..."):
             q_vec_list = safe_embedding(
                 texts=[neutral_query],
                 model=embedding_model_name,
@@ -602,39 +556,23 @@ if run_btn:
                 api_base=os.getenv("AZURE_API_BASE"),
                 api_version=os.getenv("AZURE_API_VERSION")
             )
-
             q_emb = np.array(q_vec_list[0], dtype=float)
 
-            # Calcul Similarité Cosinus
-            norm_q = np.linalg.norm(q_emb)
-            if norm_q == 0:
-                norm_q = 1.0
-
+            # Similarité Cosinus
+            norm_q = np.linalg.norm(q_emb) or 1.0
             norm_docs = np.linalg.norm(embeddings, axis=1)
             norm_docs[norm_docs == 0] = 1.0
-            
             similarities = (embeddings @ q_emb) / (norm_docs * norm_q)
 
-            # Filtrage par seuil
             candidate_indices = np.where(similarities >= sim_threshold)[0]
-
             if len(candidate_indices) == 0:
-                st.warning(
-                    "Aucun segment ne dépasse le seuil de similarité configuré. "
-                    "Utilisation des meilleurs segments disponibles malgré tout."
-                )
-                # on prend un pool un peu plus large pour MMR ou tri simple
+                st.warning("⚠️ Seuil de pertinence non atteint. Utilisation des meilleurs segments disponibles.")
                 candidate_indices = np.argsort(-similarities)[: max(top_k_chunks * 3, top_k_chunks)]
-            
-            # Sélection finale (MMR ou simple tri)
+
+            # Sélection (MMR ou Standard)
             if use_mmr:
                 sub_emb = embeddings[candidate_indices]
-                mmr_indices_sub = mmr(
-                    embeddings=sub_emb,
-                    query_emb=q_emb,
-                    k=top_k_chunks,
-                    lambda_mult=lambda_mmr,
-                )
+                mmr_indices_sub = mmr(sub_emb, q_emb, top_k_chunks, lambda_mmr)
                 top_indices = [int(candidate_indices[i]) for i in mmr_indices_sub]
             else:
                 sorted_candidates = candidate_indices[np.argsort(-similarities[candidate_indices])]
@@ -642,167 +580,110 @@ if run_btn:
 
             selected_chunks = [chunks[i] for i in top_indices]
 
-            # Calcul des tokens sélectionnés pour le contexte
-            selected_tokens = sum(estimate_tokens(c['content']) for c in selected_chunks)
+            # Prep context
+            context_str = ""
+            for i, c in enumerate(selected_chunks):
+                date_str = c["date"].strftime("%Y-%m-%d") if isinstance(c["date"], datetime) else str(c["date"])
+                context_str += f"\n### SEGMENT {i+1}\n[SOURCE: {c['doc_type']} - {c['doc_name']} - {date_str}]\n{c['content']}\n"
 
-            st.markdown("---")
-            st.subheader("🔍 Résultats de la recherche")
+    except ConnectionError as e:
+        st.error(f"❌ Erreur de connexion lors de la recherche vectorielle : {e}")
+        logger.error(f"Erreur de connexion : {e}")
+        st.stop()
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la recherche vectorielle : {e}")
+        logger.error(f"Erreur recherche : {e}")
+        st.stop()
 
-            col_search1, col_search2, col_search3 = st.columns(3)
+    # 3. GÉNÉRATION & AFFICHAGE (Système d'onglets)
+    st.divider()
 
-            with col_search1:
-                st.metric(
-                    label="📄 Segments sélectionnés",
-                    value=top_k_chunks,
-                    help="Nombre de chunks les plus pertinents"
-                )
+    # Création des onglets pour organiser l'information
+    tab_report, tab_sources, tab_tech = st.tabs(["📝 Rapport d'Analyse", "📂 Sources Utilisées", "📊 Données Techniques"])
 
-            with col_search2:
-                st.metric(
-                    label="🎫 Tokens contexte",
-                    value=f"{selected_tokens:,}",
-                    help="Tokens qui seront envoyés au LLM"
-                )
+    # --- ONGLET 1 : RAPPORT ---
+    with tab_report:
+        st.subheader("Synthèse IA")
 
-            with col_search3:
-                context_percent = (selected_tokens / total_chunks_tokens) * 100 if total_chunks_tokens > 0 else 0
-                st.metric(
-                    label="📊 Utilisation",
-                    value=f"{context_percent:.1f}%",
-                    help="Pourcentage du contenu indexé utilisé"
-                )
-
-        except ConnectionError as e:
-            st.error(f"❌ Erreur de connexion lors de la recherche vectorielle : {e}")
-            logger.error(f"Erreur de connexion : {e}")
-            st.stop()
-        except Exception as e:
-            st.error(f"❌ Erreur Recherche Vectorielle : {e}")
-            logger.error(f"Erreur recherche vectorielle : {e}")
-            st.stop()
-
-        # --- PHASE 3 : GENERATION REPONSE ---
-        # Contexte mieux structuré
-        context_str = ""
-        for i, c in enumerate(selected_chunks):
-            date_str = c["date"].strftime("%Y-%m-%d") if isinstance(c["date"], datetime) else str(c["date"])
-            context_str += (
-                f"\n### SEGMENT {i+1}\n"
-                f"[SOURCE: {c['doc_type']} - {c['doc_name']} - {date_str}]\n"
-                f"{c['content']}\n"
-            )
-
-        # Chargement du prompt système depuis le fichier
         try:
             system_prompt = load_prompt("rag_system_prompt.txt")
-        except Exception as e:
-            st.error(f"❌ Impossible de charger le prompt système : {e}")
-            logger.error(f"Erreur chargement prompt : {e}")
+        except Exception:
             system_prompt = "Tu es un expert en analyse de documents de projet IT."
 
-        st.divider()
-        st.subheader("📝 Rapport d'Analyse")
-
-        with st.spinner("🧠 Rédaction du rapport en cours..."):
+        with st.spinner("✍️ Rédaction du rapport en cours..."):
             try:
-                # Utilisation de safe_completion avec retry automatique
                 response = safe_completion(
                     model=model_name,
                     messages=[
                         {"role": "system", "content": system_prompt},
-                        {
-                            "role": "user",
-                            "content": f"Voici des extraits de documents de projet. Utilise uniquement ces informations pour produire ton analyse.\n\n{context_str}"
-                        },
+                        {"role": "user", "content": f"Voici les extraits:\n\n{context_str}"}
                     ],
                     api_key=os.getenv("AZURE_API_KEY"),
                     api_base=os.getenv("AZURE_API_BASE"),
                     api_version=os.getenv("AZURE_API_VERSION")
                 )
-
                 ai_text = response.choices[0].message.content
+
+                # Affichage joli type "Chat"
+                with st.chat_message("assistant", avatar="🤖"):
+                    st.markdown(ai_text)
+
+                st.toast("Analyse terminée avec succès !", icon="✅")
+
+                # Bouton de téléchargement
+                st.download_button(
+                    label="📥 Télécharger le rapport (.txt)",
+                    data=ai_text,
+                    file_name=f"Rapport_Analyse_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                    mime="text/plain"
+                )
+
+                # Métriques de coût pour ce run
                 output_tokens = response.usage.completion_tokens
                 input_tokens_used = response.usage.prompt_tokens
-
-                st.markdown(ai_text)
-
-                # Récapitulatif final des tokens et coûts
-                st.markdown("---")
-                st.subheader("📊 Récapitulatif de la session")
-
-                # Calcul du coût
                 cost_info = calculate_cost(input_tokens_used, output_tokens, model_name)
-
-                col1, col2, col3, col4 = st.columns(4)
-
-                with col1:
-                    st.metric(
-                        label="📥 Tokens entrée",
-                        value=f"{input_tokens_used:,}",
-                        help="Tokens envoyés (prompt + contexte)"
-                    )
-
-                with col2:
-                    st.metric(
-                        label="📤 Tokens sortie",
-                        value=f"{output_tokens:,}",
-                        help="Tokens générés par le LLM"
-                    )
-
-                with col3:
-                    st.metric(
-                        label="🎫 Total tokens",
-                        value=f"{cost_info['total_tokens']:,}",
-                        help="Total de la génération"
-                    )
-
-                with col4:
-                    st.metric(
-                        label="💰 Coût génération",
-                        value=format_cost(cost_info['total_cost']),
-                        help=f"Modèle: {model_name}"
-                    )
-
-                # Calcul du coût total (embeddings + génération)
-                embedding_cost_info = calculate_cost(total_chunks_tokens, 0, embedding_model_name)
-                total_session_cost = embedding_cost_info['total_cost'] + cost_info['total_cost']
-
-                # Détail des coûts avec embeddings
-                with st.expander("💵 Détail complet des coûts"):
-                    st.write("**Coûts de génération (LLM)**")
-                    st.write(f"- Modèle: `{model_name}`")
-                    st.write(f"- Coût entrée: {format_cost(cost_info['input_cost'])} ({input_tokens_used:,} tokens)")
-                    st.write(f"- Coût sortie: {format_cost(cost_info['output_cost'])} ({output_tokens:,} tokens)")
-                    st.write(f"- Sous-total LLM: {format_cost(cost_info['total_cost'])}")
-
-                    st.write("")
-                    st.write("**Coûts d'indexation (Embeddings)**")
-                    st.write(f"- Modèle: `{embedding_model_name}`")
-                    st.write(f"- Tokens indexés: {total_chunks_tokens:,}")
-                    st.write(f"- Coût embeddings: {format_cost(embedding_cost_info['total_cost'])}")
-
-                    st.write("")
-                    st.write(f"**💰 Coût total de la session: {format_cost(total_session_cost)}**")
-
-                    st.info("💡 Les embeddings sont mis en cache. Les prochaines exécutions ne paieront que la génération LLM !")
 
             except ConnectionError as e:
                 st.error("❌ Impossible de se connecter à l'API. Vérifiez votre connexion internet.")
                 logger.error(f"Erreur de connexion API : {e}")
-                st.code(str(e))
-            except PermissionError as e:
-                st.error("❌ Erreur d'authentification. Vérifiez votre clé API Azure.")
-                logger.error(f"Erreur d'authentification : {e}")
-                st.code(str(e))
+                st.stop()
             except Exception as e:
-                st.error(f"❌ Erreur LLM : {e}")
-                logger.error(f"Erreur inattendue lors de l'appel LLM : {e}")
-                st.code(str(e))
+                st.error(f"❌ Erreur lors de la génération : {e}")
+                logger.error(f"Erreur génération : {e}")
+                st.stop()
 
-        # --- SOURCES ---
-        st.markdown("---")
-        with st.expander("🔎 Consulter les extraits sources utilisés"):
-            for i, c in enumerate(selected_chunks):
-                st.markdown(f"**Source {i+1} : {c['doc_type']}** - {c['doc_name']}")
-                st.caption(c["content"][:600] + " [...]")
-                st.divider()
+    # --- ONGLET 2 : SOURCES ---
+    with tab_sources:
+        st.info(f"💡 L'IA a basé son analyse sur **{len(selected_chunks)} segments** extraits de vos documents.")
+
+        for i, chunk in enumerate(selected_chunks):
+            with st.expander(f"📄 Source {i+1}: {chunk['doc_name']} ({chunk['doc_type']})"):
+                st.caption(f"Date: {chunk['date']}")
+                st.markdown(f"```text\n{chunk['content']}\n```")
+
+    # --- ONGLET 3 : TECHNIQUE & COÛTS ---
+    with tab_tech:
+        st.subheader("Métriques de la session")
+
+        # Métriques Globales
+        total_chunks_tokens = sum(estimate_tokens(c['content']) for c in chunks)
+        embedding_cost = calculate_cost(total_chunks_tokens, 0, embedding_model_name)['total_cost']
+        total_cost = cost_info['total_cost'] + embedding_cost
+
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Segments Indexés", len(chunks))
+        col2.metric("Tokens Indexés", f"{total_chunks_tokens:,}")
+        col3.metric("Tokens Générés", f"{output_tokens:,}")
+        col4.metric("Coût Total ($)", format_cost(total_cost))
+
+        st.markdown("### 📋 État des fichiers")
+        st.dataframe(pd.DataFrame(stats), width='stretch')
+
+        st.markdown("### 💰 Détail des coûts")
+        st.json({
+            "Modele LLM": model_name,
+            "Cout Entree LLM": format_cost(cost_info['input_cost']),
+            "Cout Sortie LLM": format_cost(cost_info['output_cost']),
+            "Cout Indexation (Embedding)": format_cost(embedding_cost),
+            "Total": format_cost(total_cost)
+        })
