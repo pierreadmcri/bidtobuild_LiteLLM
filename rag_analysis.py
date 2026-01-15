@@ -14,7 +14,7 @@ from utils import (
     validate_file_path, validate_file_size, safe_completion, safe_embedding,
     estimate_tokens, calculate_cost, format_cost, load_prompt,
     rate_limiter, ValidationError, FileTooLargeError, logger,
-    analyze_image_with_vision
+    extract_text_from_image
 )
 
 # Imports lecture
@@ -82,17 +82,12 @@ def read_file_content(filepath):
     try:
         # === IMAGES STANDALONE ===
         if ext in [".jpg", ".jpeg", ".png"]:
-            logger.info(f"Analyse d'image : {filepath}")
-            if config.ENABLE_IMAGE_ANALYSIS:
-                description = analyze_image_with_vision(
-                    filepath,
-                    api_key=os.getenv("AZURE_API_KEY"),
-                    api_base=os.getenv("AZURE_API_BASE"),
-                    api_version=os.getenv("AZURE_API_VERSION")
-                )
-                content = f"[IMAGE: {os.path.basename(filepath)}]\n{description}\n"
+            logger.info(f"Extraction de texte de l'image : {filepath}")
+            text = extract_text_from_image(filepath)
+            if text and not text.startswith("["):
+                content = f"[IMAGE: {os.path.basename(filepath)}]\n{text}\n"
             else:
-                content = f"[IMAGE: {os.path.basename(filepath)} - analyse désactivée]\n"
+                content = f"[IMAGE: {os.path.basename(filepath)}]\n{text}\n"
 
         # === PDFs AVEC EXTRACTION D'IMAGES ===
         elif ext == ".pdf":
@@ -104,7 +99,7 @@ def read_file_content(filepath):
                     content += text + "\n"
 
             # Extraction des images avec PyMuPDF
-            if config.ENABLE_IMAGE_ANALYSIS:
+            if config.ENABLE_IMAGE_OCR:
                 try:
                     doc = fitz.open(filepath)
                     image_count = 0
@@ -125,17 +120,13 @@ def read_file_content(filepath):
                                 with open(temp_image_path, "wb") as img_file:
                                     img_file.write(image_bytes)
 
-                                # Analyser l'image
-                                description = analyze_image_with_vision(
-                                    temp_image_path,
-                                    prompt=f"Décris cette image extraite de la page {page_num + 1} d'un document PDF de projet IT.",
-                                    api_key=os.getenv("AZURE_API_KEY"),
-                                    api_base=os.getenv("AZURE_API_BASE"),
-                                    api_version=os.getenv("AZURE_API_VERSION")
-                                )
+                                # Extraire le texte de l'image
+                                text = extract_text_from_image(temp_image_path)
 
-                                content += f"\n[IMAGE PAGE {page_num + 1}]\n{description}\n"
-                                image_count += 1
+                                # Ajouter le texte extrait seulement s'il y en a
+                                if text and not text.startswith("[") and len(text.strip()) > 0:
+                                    content += f"\n[IMAGE PAGE {page_num + 1}]\n{text}\n"
+                                    image_count += 1
 
                                 # Nettoyer le fichier temporaire
                                 os.remove(temp_image_path)
@@ -146,7 +137,7 @@ def read_file_content(filepath):
 
                     doc.close()
                     if image_count > 0:
-                        logger.info(f"{image_count} image(s) extraite(s) et analysée(s) du PDF")
+                        logger.info(f"{image_count} image(s) extraite(s) et texte extrait par OCR du PDF")
 
                 except Exception as pdf_img_err:
                     logger.warning(f"Erreur lors de l'extraction d'images du PDF : {pdf_img_err}")

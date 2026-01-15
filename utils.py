@@ -4,13 +4,12 @@ Fonctions utilitaires pour la gestion des erreurs, retry, validation et rate lim
 import os
 import time
 import logging
-import base64
-from io import BytesIO
 from pathlib import Path
 from functools import wraps
 from typing import Callable, Any, List, Union
 from litellm import completion, embedding, token_counter
 from PIL import Image
+import pytesseract
 import config
 
 # Configuration du logger
@@ -262,129 +261,71 @@ def safe_embedding(texts: List[str], model: str = None, **kwargs):
         raise
 
 # ==========================================
-# ANALYSE D'IMAGES (VISION)
+# EXTRACTION DE TEXTE (OCR)
 # ==========================================
 
-def encode_image_to_base64(image_path: Union[str, Path]) -> str:
+def extract_text_from_image(image_path: Union[str, Path], lang: str = None) -> str:
     """
-    Encode une image en base64 pour l'API Vision
+    Extrait le texte d'une image avec Tesseract OCR (gratuit, sans API)
 
     Args:
         image_path: Chemin vers l'image
+        lang: Langue(s) pour l'OCR (défaut: config.OCR_LANGUAGE)
+              Format: 'fra' pour français, 'eng' pour anglais, 'fra+eng' pour les deux
 
     Returns:
-        String base64 de l'image optimisée
+        Texte extrait de l'image
 
     Raises:
-        Exception: Si l'image ne peut pas être lue ou encodée
+        Exception: Si l'OCR échoue
     """
+    if not config.ENABLE_IMAGE_OCR:
+        logger.info("OCR désactivé")
+        return "[Image présente - OCR désactivé]"
+
+    lang = lang or config.OCR_LANGUAGE
+
     try:
-        # Ouvrir et redimensionner l'image si nécessaire
+        # Ouvrir l'image
         img = Image.open(image_path)
 
-        # Convertir en RGB si nécessaire (pour les PNG avec alpha)
-        if img.mode in ('RGBA', 'LA', 'P'):
-            background = Image.new('RGB', img.size, (255, 255, 255))
-            if img.mode == 'P':
-                img = img.convert('RGBA')
-            background.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
-            img = background
-        elif img.mode != 'RGB':
-            img = img.convert('RGB')
-
-        # Redimensionner si trop grand (pour économiser les coûts API)
-        max_dim = config.MAX_IMAGE_DIMENSION
-        if max(img.size) > max_dim:
-            ratio = max_dim / max(img.size)
+        # Amélioration de la qualité pour OCR
+        # Upscaling si l'image est trop petite
+        min_dim = config.MIN_OCR_DIMENSION
+        if min(img.size) < min_dim:
+            ratio = min_dim / min(img.size)
             new_size = tuple(int(dim * ratio) for dim in img.size)
             img = img.resize(new_size, Image.Resampling.LANCZOS)
-            logger.info(f"Image redimensionnée à {new_size}")
+            logger.info(f"Image agrandie à {new_size} pour améliorer l'OCR")
 
-        # Encoder en JPEG pour réduire la taille
-        buffer = BytesIO()
-        img.save(buffer, format="JPEG", quality=config.IMAGE_QUALITY, optimize=True)
-        buffer.seek(0)
+        # Conversion en niveaux de gris pour améliorer la reconnaissance
+        if img.mode != 'L':
+            img = img.convert('L')
 
-        # Encoder en base64
-        img_base64 = base64.b64encode(buffer.read()).decode('utf-8')
-        logger.info(f"Image encodée : {len(img_base64)} caractères base64")
+        # Extraction du texte avec Tesseract
+        text = pytesseract.image_to_string(img, lang=lang)
 
-        return img_base64
+        # Nettoyer le texte extrait
+        text = text.strip()
+
+        if text:
+            logger.info(f"OCR réussi : {len(text)} caractères extraits de {image_path}")
+            return text
+        else:
+            logger.warning(f"Aucun texte détecté dans l'image : {image_path}")
+            return "[Image sans texte détectable]"
+
+    except pytesseract.TesseractNotFoundError:
+        error_msg = (
+            "Tesseract OCR n'est pas installé. "
+            "Installation requise : sudo apt-get install tesseract-ocr tesseract-ocr-fra"
+        )
+        logger.error(error_msg)
+        return f"[Erreur OCR : Tesseract non installé]"
 
     except Exception as e:
-        logger.error(f"Erreur lors de l'encodage de l'image : {e}")
-        raise
-
-@retry_with_exponential_backoff()
-def analyze_image_with_vision(
-    image_path: Union[str, Path],
-    prompt: str = None,
-    model: str = None,
-    **kwargs
-) -> str:
-    """
-    Analyse une image avec GPT-4 Vision et retourne une description textuelle
-
-    Args:
-        image_path: Chemin vers l'image
-        prompt: Instruction pour l'analyse (optionnel)
-        model: Modèle Vision à utiliser (défaut: config.VISION_MODEL_NAME)
-        **kwargs: Arguments supplémentaires pour l'API
-
-    Returns:
-        Description textuelle de l'image
-
-    Raises:
-        Exception: Si l'analyse échoue
-    """
-    if not config.ENABLE_IMAGE_ANALYSIS:
-        logger.info("Analyse d'images désactivée")
-        return "[Image présente - analyse désactivée]"
-
-    rate_limiter.wait()
-
-    model = model or config.VISION_MODEL_NAME
-
-    # Prompt par défaut pour l'analyse
-    if prompt is None:
-        prompt = (
-            "Décris cette image en détail dans le contexte d'un document de projet IT. "
-            "Identifie les éléments clés : diagrammes, schémas, graphiques, tableaux, "
-            "textes importants, et leur signification. Sois précis et concis."
-        )
-
-    try:
-        # Encoder l'image
-        image_base64 = encode_image_to_base64(image_path)
-
-        # Appel à l'API Vision
-        response = completion(
-            model=model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_base64}"
-                            }
-                        }
-                    ]
-                }
-            ],
-            **kwargs
-        )
-
-        description = response.choices[0].message.content
-        logger.info(f"Image analysée avec succès : {image_path}")
-
-        return description
-
-    except Exception as e:
-        logger.error(f"Erreur lors de l'analyse de l'image {image_path}: {e}")
-        return f"[Erreur d'analyse d'image : {str(e)}]"
+        logger.error(f"Erreur lors de l'OCR de l'image {image_path}: {e}")
+        return f"[Erreur OCR : {str(e)}]"
 
 # ==========================================
 # GESTION DES TOKENS

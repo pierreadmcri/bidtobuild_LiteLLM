@@ -12,7 +12,6 @@ load_dotenv()
 
 MODEL_NAME = os.getenv("MODEL_NAME", "azure/gpt-4.1-mini")
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "azure/text-embedding-3-small")
-VISION_MODEL_NAME = os.getenv("VISION_MODEL_NAME", "azure/gpt-4o")  # Modèle avec capacité Vision
 
 # Variables Azure obligatoires
 REQUIRED_ENV_VARS = ["AZURE_API_KEY", "AZURE_API_BASE", "AZURE_API_VERSION"]
@@ -75,20 +74,22 @@ DEFAULT_MMR_LAMBDA = 0.7
 EMBEDDING_DIMENSION = 1536
 
 # ==========================================
-# CONFIGURATION VISION (IMAGES)
+# CONFIGURATION OCR (IMAGES)
 # ==========================================
 
 # Taille maximale des images (en bytes) - 20 MB par défaut
 MAX_IMAGE_SIZE_BYTES = int(os.getenv("MAX_IMAGE_SIZE_BYTES", 20 * 1024 * 1024))
 
-# Résolution maximale pour redimensionnement (pour réduire coûts API)
-MAX_IMAGE_DIMENSION = int(os.getenv("MAX_IMAGE_DIMENSION", 2048))
+# Activer/désactiver l'extraction de texte des images (OCR)
+ENABLE_IMAGE_OCR = os.getenv("ENABLE_IMAGE_OCR", "true").lower() == "true"
 
-# Qualité JPEG après compression (1-100)
-IMAGE_QUALITY = int(os.getenv("IMAGE_QUALITY", 85))
+# Langue(s) pour l'OCR (Tesseract)
+# Format: 'fra' pour français, 'eng' pour anglais, 'fra+eng' pour les deux
+OCR_LANGUAGE = os.getenv("OCR_LANGUAGE", "fra+eng")
 
-# Activer/désactiver l'analyse d'images
-ENABLE_IMAGE_ANALYSIS = os.getenv("ENABLE_IMAGE_ANALYSIS", "true").lower() == "true"
+# Résolution minimale pour améliorer la qualité OCR (upscaling)
+# Les images plus petites seront agrandies pour améliorer la reconnaissance
+MIN_OCR_DIMENSION = int(os.getenv("MIN_OCR_DIMENSION", 1000))
 
 # ==========================================
 # TARIFICATION AZURE OPENAI (USD)
