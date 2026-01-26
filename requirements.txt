@@ -5,3 +5,12 @@ litellm
 pypdf
 python-docx
 tiktoken
+numpy
+Pillow>=10.0.0
+PyMuPDF>=1.23.0
+pytesseract>=0.3.10
+
+# Tests (optionnel)
+pytest>=7.0.0
+pytest-mock>=3.10.0
+pytest-cov>=4.0.0

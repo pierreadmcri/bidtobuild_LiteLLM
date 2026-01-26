@@ -10,6 +10,7 @@ L'outil scanne un répertoire local, identifie les fichiers pertinents grâce à
 
 ## 🚀 Fonctionnalités
 
+### Version Standard (app.py)
 - **📂 Scan Intelligent :** Analyse automatique d'un dossier local.
 - **🔍 Filtrage Regex :** Détection automatique des types de documents :
   - **RBO** (Run / Build)
@@ -18,8 +19,23 @@ L'outil scanne un répertoire local, identifie les fichiers pertinents grâce à
   - **BDC** (Bon de Commande)
 - **📅 Gestion des Versions :** En cas de fichiers multiples pour un même type, seule la version la plus récente (date de modification) est conservée.
 - **📄 Support Multi-formats :** Lecture native des fichiers `.pdf`, `.docx` et `.txt`.
-- **💰 Estimation des Tokens :** Calcul du coût en tokens avant envoi au LLM.
-- **🧠 Synthèse IA :** Génération d'un résumé financier et technique via Azure OpenAI (ou tout autre modèle supporté par LiteLLM).
+- **💰 Estimation des Tokens :** Calcul précis du coût en tokens via `litellm.token_counter`.
+- **🧠 Synthèse IA :** Génération d'un résumé financier et technique via Azure OpenAI.
+
+### Version RAG (rag_analysis.py)
+- **✂️ Smart Chunking :** Découpe intelligente des documents avec overlap pour préserver le contexte.
+- **🔍 Recherche Vectorielle :** Embeddings + similarité cosinus pour trouver les passages pertinents.
+- **🎯 MMR (Maximal Marginal Relevance) :** Diversification des résultats pour éviter la redondance.
+- **💾 Cache Multi-niveaux :** Streamlit + disque pour éviter les recalculs coûteux.
+- **⚡ Traitement Parallèle :** Embeddings calculés en parallèle avec `ThreadPoolExecutor`.
+
+### Améliorations de Sécurité & Performance
+- **🛡️ Validation des Chemins :** Protection contre path traversal attacks.
+- **📏 Limite de Taille :** Fichiers volumineux rejetés automatiquement (configurable).
+- **🔄 Retry Logic :** Tentatives automatiques avec exponential backoff en cas d'échec API.
+- **⏱️ Rate Limiting :** Gestion intelligente des quotas API.
+- **📝 Logging Structuré :** Traçabilité complète avec niveaux configurables.
+- **⚠️ Gestion d'Erreurs :** Messages d'erreur spécifiques et informatifs.
 
 ## 🛠️ Prérequis technique
 
@@ -77,3 +93,71 @@ Le projet est volontairement compact pour faciliter la prise en main par des dé
 5. **Synthèse IA** : le texte combiné est envoyé à `litellm.completion` pour générer la synthèse financière et technique affichée à l'écran.
 
 En cas de besoin, tous les noms de fonctions et sections sont commentés dans `app.py` pour faciliter la navigation.
+
+## 📚 Documentation Complète
+
+- **[CONFIGURATION.md](CONFIGURATION.md)** : Guide détaillé de configuration
+  - Variables d'environnement
+  - Paramètres RAG (chunking, retrieval)
+  - Optimisation des performances
+  - Estimation des coûts
+  - Troubleshooting
+
+- **[config.py](config.py)** : Configuration centralisée
+- **[utils.py](utils.py)** : Fonctions utilitaires avec retry, validation, rate limiting
+- **[prompts/](prompts/)** : Prompts système externalisés et modifiables
+
+## 🧪 Tests
+
+Des tests unitaires sont disponibles pour valider les fonctions critiques :
+
+```bash
+# Installer les dépendances de test
+pip install pytest pytest-mock pytest-cov
+
+# Lancer les tests
+pytest test_utils.py -v
+
+# Avec couverture de code
+pytest test_utils.py --cov=utils --cov-report=html
+```
+
+## 🔒 Sécurité
+
+Le projet implémente plusieurs mesures de sécurité :
+
+1. **Validation des chemins** : Protection contre path traversal
+2. **Limite de taille** : Fichiers trop volumineux rejetés (50 MB par défaut)
+3. **Rate limiting** : Prévention du dépassement de quotas API
+4. **Logs sécurisés** : Pas d'exposition des clés API ou données sensibles
+5. **Gestion d'erreurs robuste** : Messages informatifs sans révéler d'informations système
+
+## ⚡ Performances
+
+### Mode Standard (app.py)
+- Traitement séquentiel
+- Idéal pour 5-10 documents
+- Temps : ~30-60 secondes
+
+### Mode RAG (rag_analysis.py)
+- Traitement parallèle des embeddings (4 workers)
+- Cache disque pour réutilisation
+- Idéal pour analyses répétées
+- Temps initial : ~60-90 secondes
+- Temps avec cache : ~5-10 secondes
+
+### Optimisations Recommandées
+
+Pour documents volumineux (> 20 fichiers) :
+```python
+# config.py
+NB_WORKERS = 6  # Augmenter les workers
+BATCH_SIZE = 15  # Lots plus grands
+```
+
+Pour réseau instable :
+```python
+# config.py
+MAX_RETRIES = 5  # Plus de tentatives
+RETRY_MAX_DELAY = 32  # Délai max plus long
+```
