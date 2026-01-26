@@ -3,94 +3,203 @@ import pandas as pd
 import numpy as np
 import re
 import os
-import time
 import pickle
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
-from dotenv import load_dotenv
-from litellm import completion, token_counter, embedding
+from pathlib import Path
 
-# Imports pour lecture fichiers
+# Imports locaux
+import config
+from utils import (
+    validate_file_path, validate_file_size, safe_completion, safe_embedding,
+    estimate_tokens, calculate_cost, format_cost, load_prompt,
+    rate_limiter, ValidationError, FileTooLargeError, logger,
+    extract_text_from_image
+)
+
+# Imports lecture
 from pypdf import PdfReader
 from docx import Document
+import fitz  # PyMuPDF pour extraction d'images des PDFs
 
 # ==========================================
 # 0. CONFIGURATION & SETUP
 # ==========================================
 
 st.set_page_config(
-    page_title="RAG Analyse Pro - RBO/PTC/BCO/BDC",
+    page_title="RAG Analyse Pro",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-load_dotenv()
+# Configuration Log & Env
+os.environ['LITELLM_LOG'] = config.LITELLM_LOG_LEVEL
+for var in config.REQUIRED_ENV_VARS:
+    value = os.getenv(var)
+    if not value:
+        st.error(f"❌ Variable d'environnement manquante : {var}")
+        st.info("Vérifiez votre fichier `.env`.")
+        st.stop()
+    os.environ[var] = value
 
-# --- CONSTANTES & CONFIG ---
-CACHE_FILE = "vector_store_cache.pkl"   # Fichier de sauvegarde locale
-NB_WORKERS = 4                          # Nombre d'appels simultanés vers Azure (Attention Rate Limit)
-BATCH_SIZE = 10                         # Taille des lots d'embeddings
-
-# --- CONFIGURATION AZURE ---
-model_name = os.getenv("MODEL_NAME", "azure/gpt-4o-mini")
-embedding_model_name = os.getenv("EMBEDDING_MODEL_NAME", "azure/text-embedding-3-small")
-
-required_env_vars = ["AZURE_API_KEY", "AZURE_API_BASE", "AZURE_API_VERSION"]
-missing_vars = [var for var in required_env_vars if not os.getenv(var)]
-
-if missing_vars:
-    st.error(f"❌ Configuration manquante : {', '.join(missing_vars)}")
-    st.info("Vérifiez votre fichier `.env`.")
-    st.stop()
-
-# Configuration LiteLLM
-for var in required_env_vars:
-    os.environ[var] = os.getenv(var)
-
-os.environ["LITELLM_LOG"] = "ERROR"  # Silence les logs sauf erreurs
+# Constantes
+CACHE_FILE = config.CACHE_FILE
+NB_WORKERS = config.NB_WORKERS
+BATCH_SIZE = config.BATCH_SIZE
+model_name = config.MODEL_NAME
+embedding_model_name = config.EMBEDDING_MODEL_NAME
 
 # ==========================================
 # 1. FONCTIONS UTILITAIRES
 # ==========================================
 
-def estimate_tokens(text: str) -> int:
-    """Estimation rapide du nombre de tokens (approx)."""
-    try:
-        return max(len(text) // 4, 1)
-    except Exception:
-        return 0
-
 def read_file_content(filepath):
-    """Lecture robuste PDF/DOCX/TXT."""
+    """
+    Lecture robuste PDF/DOCX/TXT/IMAGES avec validation de taille.
+    Pour les PDFs, extrait aussi les images et les analyse avec Vision API.
+
+    Args:
+        filepath: Chemin du fichier à lire
+
+    Returns:
+        Contenu du fichier ou message d'erreur
+    """
     ext = os.path.splitext(filepath)[1].lower()
     content = ""
+
+    # Validation de la taille du fichier
     try:
-        if ext == ".pdf":
+        file_path = Path(filepath)
+        validate_file_size(file_path)
+    except FileTooLargeError as e:
+        logger.warning(f"Fichier trop volumineux ignoré : {filepath}")
+        return f"[Alerte : {str(e)}]"
+    except Exception as e:
+        logger.error(f"Erreur de validation : {e}")
+        return f"[Erreur de validation : {str(e)}]"
+
+    try:
+        # === IMAGES STANDALONE ===
+        if ext in [".jpg", ".jpeg", ".png"]:
+            logger.info(f"Extraction de texte de l'image : {filepath}")
+            text = extract_text_from_image(filepath)
+            if text and not text.startswith("["):
+                content = f"[IMAGE: {os.path.basename(filepath)}]\n{text}\n"
+            else:
+                content = f"[IMAGE: {os.path.basename(filepath)}]\n{text}\n"
+
+        # === PDFs AVEC EXTRACTION D'IMAGES ===
+        elif ext == ".pdf":
+            # Extraction du texte avec pypdf
             reader = PdfReader(filepath)
             for page in reader.pages:
                 text = page.extract_text()
                 if text:
                     content += text + "\n"
+
+            # Extraction des images avec PyMuPDF
+            if config.ENABLE_IMAGE_OCR:
+                try:
+                    doc = fitz.open(filepath)
+                    image_count = 0
+
+                    for page_num in range(len(doc)):
+                        page = doc[page_num]
+                        image_list = page.get_images(full=True)
+
+                        for img_index, img in enumerate(image_list):
+                            try:
+                                xref = img[0]
+                                base_image = doc.extract_image(xref)
+                                image_bytes = base_image["image"]
+                                image_ext = base_image["ext"]
+
+                                # Sauvegarder temporairement l'image
+                                temp_image_path = f"/tmp/temp_pdf_image_{page_num}_{img_index}.{image_ext}"
+                                with open(temp_image_path, "wb") as img_file:
+                                    img_file.write(image_bytes)
+
+                                # Extraire le texte de l'image
+                                text = extract_text_from_image(temp_image_path)
+
+                                # Ajouter le texte extrait seulement s'il y en a
+                                if text and not text.startswith("[") and len(text.strip()) > 0:
+                                    content += f"\n[IMAGE PAGE {page_num + 1}]\n{text}\n"
+                                    image_count += 1
+
+                                # Nettoyer le fichier temporaire
+                                os.remove(temp_image_path)
+
+                            except Exception as img_err:
+                                logger.warning(f"Erreur extraction image PDF page {page_num}: {img_err}")
+                                continue
+
+                    doc.close()
+                    if image_count > 0:
+                        logger.info(f"{image_count} image(s) extraite(s) et texte extrait par OCR du PDF")
+
+                except Exception as pdf_img_err:
+                    logger.warning(f"Erreur lors de l'extraction d'images du PDF : {pdf_img_err}")
+
+            if not content.strip():
+                return "[Alerte : Aucun texte lisible extrait du PDF.]"
+
+        # === DOCX ===
         elif ext == ".docx":
             doc = Document(filepath)
             content = "\n".join([para.text for para in doc.paragraphs])
+
+        # === TXT ===
         elif ext == ".txt":
             with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
+
+        else:
+            logger.warning(f"Format non supporté : {ext}")
+            return f"[Format {ext} non supporté]"
+
+        logger.info(f"Fichier lu avec succès : {filepath}")
         return content
+
+    except FileNotFoundError:
+        logger.error(f"Fichier introuvable : {filepath}")
+        return f"[Erreur : Fichier introuvable]"
+    except PermissionError:
+        logger.error(f"Permission refusée : {filepath}")
+        return f"[Erreur : Permission refusée]"
     except Exception as e:
+        logger.error(f"Erreur de lecture {filepath}: {str(e)}")
         return f"[Erreur lecture: {str(e)}]"
 
 def scan_directory(directory_path):
-    """Scan récursif des fichiers."""
+    """
+    Scan récursif des fichiers avec validation.
+
+    Args:
+        directory_path: Chemin du dossier à scanner
+
+    Returns:
+        Liste de dictionnaires contenant les métadonnées des fichiers
+
+    Raises:
+        ValidationError: Si le chemin est invalide
+    """
     files_data = []
-    allowed_ext = {".pdf", ".docx", ".txt"}
-    
-    if not os.path.isdir(directory_path):
+    allowed_ext = config.ALLOWED_EXTENSIONS
+
+    # Validation du chemin
+    try:
+        validated_path = validate_file_path(directory_path)
+    except ValidationError as e:
+        logger.error(f"Chemin invalide : {e}")
+        raise
+
+    if not validated_path.is_dir():
+        logger.warning(f"Le chemin n'est pas un dossier : {directory_path}")
         return []
 
-    for root, _, files in os.walk(directory_path):
+    for root, _, files in os.walk(validated_path):
         for filename in files:
             ext = os.path.splitext(filename)[1].lower()
             if ext in allowed_ext:
@@ -103,8 +212,11 @@ def scan_directory(directory_path):
                         "date": datetime.fromtimestamp(stats.st_mtime),
                         "size": stats.st_size
                     })
-                except Exception:
+                except Exception as e:
+                    logger.warning(f"Impossible de lire {filepath}: {e}")
                     continue
+
+    logger.info(f"Scan terminé : {len(files_data)} fichiers trouvés")
     return files_data
 
 # ==========================================
@@ -174,26 +286,32 @@ def smart_chunk_document(doc, max_tokens: int, overlap_tokens: int):
     return chunks
 
 def get_embeddings_batch(texts):
-    """Wrapper pour appel API Embedding avec gestion d'erreur."""
-    # Troncature de sécurité pour l'API (limite technique ~8191 tokens)
-    safe_texts = [t[:30000] for t in texts] 
-    
+    """
+    Wrapper pour appel API Embedding avec gestion d'erreur et retry.
+
+    Args:
+        texts: Liste de textes à embedder
+
+    Returns:
+        Liste d'embeddings ou vecteurs zéro en cas d'échec
+    """
     try:
-        response = embedding(
+        # Utilisation de safe_embedding qui gère le retry et rate limiting
+        embeddings = safe_embedding(
+            texts=texts,
             model=embedding_model_name,
-            input=safe_texts,
             api_key=os.getenv("AZURE_API_KEY"),
             api_base=os.getenv("AZURE_API_BASE"),
             api_version=os.getenv("AZURE_API_VERSION")
         )
-        # Extraction robuste (dict ou object)
-        if hasattr(response, "data"):
-            return [d["embedding"] if isinstance(d, dict) else d.embedding for d in response.data]
-        elif isinstance(response, dict) and "data" in response:
-            return [d["embedding"] for d in response["data"]]
-        return [[0.0] * 1536 for _ in texts]
-    except Exception:
-        return [[0.0] * 1536 for _ in texts]
+        return embeddings
+
+    except ConnectionError as e:
+        logger.error(f"Erreur de connexion lors de l'embedding : {e}")
+        return [[0.0] * config.EMBEDDING_DIMENSION for _ in texts]
+    except Exception as e:
+        logger.error(f"Erreur lors de l'embedding : {e}")
+        return [[0.0] * config.EMBEDDING_DIMENSION for _ in texts]
 
 # ==========================================
 # 3. MMR (Maximal Marginal Relevance)
@@ -257,14 +375,14 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
     """
     logs = []
     stats = []
-    
+
     # --- A. VERIFICATION CACHE DISQUE ---
     if os.path.exists(CACHE_FILE):
         try:
             with open(CACHE_FILE, "rb") as f:
                 saved_data = pickle.load(f)
             if (
-                saved_data.get("folder") == folder_path 
+                saved_data.get("folder") == folder_path
                 and saved_data.get("max_chunk_tokens") == max_chunk_tokens
                 and saved_data.get("overlap_tokens") == overlap_tokens
             ):
@@ -283,10 +401,10 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
 
     # --- B. SCAN ET LECTURE ---
     search_patterns = {
-        "RBO": r".*RBO.*", "PTC": r".*PTC.*", 
+        "RBO": r".*RBO.*", "PTC": r".*PTC.*",
         "BCO": r".*BCO.*", "BDC": r".*BDC.*"
     }
-    
+
     all_files = scan_directory(folder_path)
     if not all_files:
         return None, None, logs, "Dossier vide ou introuvable", []
@@ -318,7 +436,7 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
             "Nb Segments": len(doc_chunks),
             "État": "✅ Indexé"
         })
-    
+
     logs.append(f"✂️ Total segments générés : {len(all_chunks)}")
 
     if not all_chunks:
@@ -326,20 +444,20 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
 
     # --- D. EMBEDDINGS PARALLÈLES (MULTI-THREADING) ---
     texts = [c["content"] for c in all_chunks]
-    
+
     batches = []
     for i in range(0, len(texts), BATCH_SIZE):
         batches.append((i, texts[i:i+BATCH_SIZE]))
 
     def process_batch_worker(args):
         idx, batch_txt = args
-        time.sleep(0.05)  # Petit délai pour ménager l'API
+        rate_limiter.wait()  # Rate limiting centralisé
         emb = get_embeddings_batch(batch_txt)
         return idx, emb
 
     results = []
     progress_bar = st.progress(0, text="Calcul vectoriel en parallèle...")
-    
+
     with ThreadPoolExecutor(max_workers=NB_WORKERS) as executor:
         futures = list(executor.map(process_batch_worker, batches))
         for i, res in enumerate(futures):
@@ -378,171 +496,156 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
     return all_chunks, np_embeddings, logs, None, stats
 
 # ==========================================
-# 5. INTERFACE STREAMLIT
+# 5. INTERFACE STREAMLIT (REFONDUE UX/UI)
 # ==========================================
 
-# --- SIDEBAR ---
-with st.sidebar:
-    st.header("🎛️ Paramètres")
+# --- CSS PERSONNALISÉ POUR UN LOOK PLUS PRO ---
+st.markdown("""
+<style>
+    .stMetric {
+        background-color: #1e2530;
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid #3d4654;
+    }
+    .stMetric label {
+        color: #b8bcc5 !important;
+    }
+    .stMetric [data-testid="stMetricValue"] {
+        color: #ffffff !important;
+    }
+    .stMetric [data-testid="stMetricDelta"] {
+        color: #a0a6b0 !important;
+    }
+    .stButton button {
+        border-radius: 8px;
+        font-weight: bold;
+    }
+    h1 { color: #2c3e50; }
+    h2, h3 { color: #34495e; }
+</style>
+""", unsafe_allow_html=True)
 
-    if st.button("🗑️ Vider Cache & Recharger", type="secondary"):
+# --- SIDEBAR OPTIMISÉE ---
+with st.sidebar:
+    st.title("🎛️ Contrôle")
+
+    st.info("Ce module analyse vos documents RBO, PTC, BCO et BDC pour générer une synthèse structurée.")
+
+    # Section Reset bien visible
+    if st.button("🗑️ Vider le Cache", type="secondary", help="Force le rechargement complet des fichiers"):
         st.cache_resource.clear()
         if os.path.exists(CACHE_FILE):
             os.remove(CACHE_FILE)
+        st.toast("Cache vidé avec succès !", icon="🗑️")
         st.rerun()
 
-    st.markdown("### ⚙️ RAG - Chunking")
-    max_chunk_tokens = st.slider(
-        "Taille des segments (tokens approx.)",
-        min_value=200,
-        max_value=1500,
-        value=600,
-        step=50,
-    )
-    overlap_tokens = st.slider(
-        "Overlap entre segments (tokens)",
-        min_value=0,
-        max_value=400,
-        value=120,
-        step=20,
-    )
+    st.markdown("---")
 
-    st.markdown("### 🔎 RAG - Retrieval")
-    top_k_chunks = st.slider(
-        "Nombre de segments utilisés (Top-K)",
-        min_value=3,
-        max_value=20,
-        value=6,
-        step=1,
-    )
-    sim_threshold = st.slider(
-        "Seuil de similarité minimum",
-        min_value=0.0,
-        max_value=1.0,
-        value=0.15,
-        step=0.01,
-    )
+    # Masquer la complexité technique
+    with st.expander("🔧 Configuration Avancée", expanded=False):
+        st.caption("Paramètres du découpage (Chunking)")
+        max_chunk_tokens = st.slider("Taille segments", 200, 1500, 600, 50)
+        overlap_tokens = st.slider("Overlap", 0, 400, 120, 20)
 
-    use_mmr = st.checkbox("Activer MMR (diversification)", value=True)
-    lambda_mmr = st.slider(
-        "MMR λ (pertinence vs diversité)",
-        min_value=0.1,
-        max_value=0.9,
-        value=0.7,
-        step=0.05,
-    )
+        st.caption("Paramètres de recherche (Retrieval)")
+        top_k_chunks = st.slider("Top-K segments", 3, 20, 6)
+        sim_threshold = st.slider("Seuil similarité", 0.0, 1.0, 0.15, 0.01)
 
-    st.info(
-        f"""
-**Mode Turbo** 🚀  
-- Taille segment ≈ {max_chunk_tokens} tokens  
-- Overlap ≈ {overlap_tokens} tokens  
-- Top-K = {top_k_chunks}  
-- Seuil sim. = {sim_threshold:.2f}  
-- MMR = {"ON" if use_mmr else "OFF"} (λ={lambda_mmr:.2f})
-"""
-    )
+        use_mmr = st.checkbox("Activer MMR (Diversité)", value=True)
+        if use_mmr:
+            lambda_mmr = st.slider("MMR λ", 0.1, 0.9, 0.7)
+        else:
+            lambda_mmr = 0.7 # Valeur par défaut si désactivé
 
-# --- MAIN ---
-st.title("📂 Analyseur de Projets IT (RAG)")
-st.markdown("Analyse automatique des documents **RBO, PTC, BCO, BDC**.")
+# --- MAIN HEADER ---
+col_logo, col_title = st.columns([1, 6])
+with col_logo:
+    st.markdown("# ⚡")
+with col_title:
+    st.title("Analyseur de Projets IT")
+    st.markdown("RAG Intelligent • RBO / PTC / BCO / BDC")
 
-col1, col2 = st.columns([3, 1])
-with col1:
+st.markdown("---")
+
+# --- ZONE DE SÉLECTION DU DOSSIER ---
+col_input, col_btn = st.columns([3, 1])
+with col_input:
     default_path = os.path.join(os.getcwd(), "documents_types")
-    folder_path = st.text_input("Dossier à analyser :", value=default_path)
-
-with col2:
+    folder_path = st.text_input(
+        "📂 Chemin du dossier à analyser",
+        value=default_path,
+        placeholder="/chemin/absolu/vers/vos/documents"
+    )
+with col_btn:
+    st.write("") # Spacer pour aligner le bouton
     st.write("")
-    st.write("")
-    run_btn = st.button("🚀 Analyser", type="primary", width='stretch')
+    run_btn = st.button("🚀 Lancer l'analyse", type="primary", width='stretch')
 
+# --- LOGIQUE D'EXÉCUTION ---
 if run_btn:
-    if not folder_path or not os.path.exists(folder_path):
-        st.error("⚠️ Chemin invalide.")
-    else:
-        # --- PHASE 1 : CHARGEMENT & INDEXATION ---
-        with st.status("🔍 Analyse des documents...", expanded=True) as status:
+    if not folder_path:
+        st.error("⚠️ Veuillez entrer un chemin de dossier valide.")
+        st.stop()
+
+    # 1. INDEXATION (Status Container)
+    with st.status("🔍 Analyse et indexation des documents...", expanded=True) as status:
+        try:
+            validate_file_path(folder_path)
             chunks, embeddings, logs, error, stats = load_and_process_data_optimized(
-                folder_path,
-                max_chunk_tokens=max_chunk_tokens,
-                overlap_tokens=overlap_tokens,
+                folder_path, max_chunk_tokens, overlap_tokens
             )
-            
+
+            # Affichage des logs importants en temps réel
             for log in logs:
-                st.markdown(log)
-                
+                st.text(log.replace("**", "").replace("✅", "  >").replace("⚠️", "  !"))
+
             if error:
-                status.update(label="❌ Erreur", state="error")
+                status.update(label="❌ Erreur critique", state="error")
                 st.error(error)
                 st.stop()
             else:
-                status.update(label="✅ Indexation terminée !", state="complete", expanded=False)
+                status.update(label="✅ Documents indexés et prêts !", state="complete", expanded=False)
 
-        # Affichage Stats
-        if stats:
-            with st.expander("📊 Voir les détails de l'indexation"):
-                st.dataframe(pd.DataFrame(stats), width='stretch')
+        except ValidationError as e:
+            status.update(label="❌ Chemin invalide", state="error")
+            st.error(f"Erreur de validation : {e}")
+            st.stop()
+        except Exception as e:
+            status.update(label="❌ Erreur technique", state="error")
+            st.error(f"Erreur : {e}")
+            st.stop()
 
-        # --- PHASE 2 : RECHERCHE (RAG) ---
-        # Ici on n'injecte PAS de requête utilisateur explicite :
-        # le LLM sera guidé uniquement par le prompt système.
-        try:
-            # Embedding d'une "pseudo-question" neutre pour structurer la recherche
-            # (optionnel, mais tu peux garder un wording générique)
-            neutral_query = "Analyse globale de ce projet IT (contexte, périmètre, finances, risques, recommandations)."
+    # 2. RECHERCHE VECTORIELLE
+    try:
+        # Embedding query neutre
+        neutral_query = "Analyse globale de ce projet IT (contexte, périmètre, finances, risques, recommandations)."
 
-            q_resp = embedding(
+        with st.spinner("🧠 Recherche des passages pertinents..."):
+            q_vec_list = safe_embedding(
+                texts=[neutral_query],
                 model=embedding_model_name,
-                input=neutral_query,
                 api_key=os.getenv("AZURE_API_KEY"),
                 api_base=os.getenv("AZURE_API_BASE"),
                 api_version=os.getenv("AZURE_API_VERSION")
             )
-            
-            # Extraction sécurisée
-            if hasattr(q_resp, "data"):
-                data_item = q_resp.data[0]
-            else:
-                data_item = q_resp["data"][0]
-                
-            if hasattr(data_item, "embedding"):
-                q_vec = data_item.embedding
-            else:
-                q_vec = data_item["embedding"]
-                
-            q_emb = np.array(q_vec, dtype=float)
+            q_emb = np.array(q_vec_list[0], dtype=float)
 
-            # Calcul Similarité Cosinus
-            norm_q = np.linalg.norm(q_emb)
-            if norm_q == 0:
-                norm_q = 1.0
-
+            # Similarité Cosinus
+            norm_q = np.linalg.norm(q_emb) or 1.0
             norm_docs = np.linalg.norm(embeddings, axis=1)
             norm_docs[norm_docs == 0] = 1.0
-            
             similarities = (embeddings @ q_emb) / (norm_docs * norm_q)
 
-            # Filtrage par seuil
             candidate_indices = np.where(similarities >= sim_threshold)[0]
-
             if len(candidate_indices) == 0:
-                st.warning(
-                    "Aucun segment ne dépasse le seuil de similarité configuré. "
-                    "Utilisation des meilleurs segments disponibles malgré tout."
-                )
-                # on prend un pool un peu plus large pour MMR ou tri simple
+                st.warning("⚠️ Seuil de pertinence non atteint. Utilisation des meilleurs segments disponibles.")
                 candidate_indices = np.argsort(-similarities)[: max(top_k_chunks * 3, top_k_chunks)]
-            
-            # Sélection finale (MMR ou simple tri)
+
+            # Sélection (MMR ou Standard)
             if use_mmr:
                 sub_emb = embeddings[candidate_indices]
-                mmr_indices_sub = mmr(
-                    embeddings=sub_emb,
-                    query_emb=q_emb,
-                    k=top_k_chunks,
-                    lambda_mult=lambda_mmr,
-                )
+                mmr_indices_sub = mmr(sub_emb, q_emb, top_k_chunks, lambda_mmr)
                 top_indices = [int(candidate_indices[i]) for i in mmr_indices_sub]
             else:
                 sorted_candidates = candidate_indices[np.argsort(-similarities[candidate_indices])]
@@ -550,74 +653,110 @@ if run_btn:
 
             selected_chunks = [chunks[i] for i in top_indices]
 
-        except Exception as e:
-            st.error(f"Erreur Recherche Vectorielle : {e}")
-            st.stop()
+            # Prep context
+            context_str = ""
+            for i, c in enumerate(selected_chunks):
+                date_str = c["date"].strftime("%Y-%m-%d") if isinstance(c["date"], datetime) else str(c["date"])
+                context_str += f"\n### SEGMENT {i+1}\n[SOURCE: {c['doc_type']} - {c['doc_name']} - {date_str}]\n{c['content']}\n"
 
-        # --- PHASE 3 : GENERATION REPONSE ---
-        # Contexte mieux structuré
-        context_str = ""
-        for i, c in enumerate(selected_chunks):
-            date_str = c["date"].strftime("%Y-%m-%d") if isinstance(c["date"], datetime) else str(c["date"])
-            context_str += (
-                f"\n### SEGMENT {i+1}\n"
-                f"[SOURCE: {c['doc_type']} - {c['doc_name']} - {date_str}]\n"
-                f"{c['content']}\n"
-            )
+    except ConnectionError as e:
+        st.error(f"❌ Erreur de connexion lors de la recherche vectorielle : {e}")
+        logger.error(f"Erreur de connexion : {e}")
+        st.stop()
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la recherche vectorielle : {e}")
+        logger.error(f"Erreur recherche : {e}")
+        st.stop()
 
-        system_prompt = """
-Tu es un directeur de projet expert en delivery IT.
+    # 3. GÉNÉRATION & AFFICHAGE (Système d'onglets)
+    st.divider()
 
-Tu reçois des extraits de documents de projet (RBO, PTC, BCO, BDC) au format suivant :
-### SEGMENT i
-[SOURCE: TYPE - NOM_FICHIER - DATE]
-CONTENU...
+    # Création des onglets pour organiser l'information
+    tab_report, tab_sources, tab_tech = st.tabs(["📝 Rapport d'Analyse", "📂 Sources Utilisées", "📊 Données Techniques"])
 
-RÈGLES :
-- Réponds UNIQUEMENT en t'appuyant sur les segments fournis.
-- Quand tu cites un chiffre ou un fait, indique la source au format [RBO], [PTC], [BCO], [BDC].
-- Si une information n'apparaît pas clairement dans les segments, répond "Non spécifié".
-- Si un type de document n'est pas présent (par ex. pas de BDC), précise-le explicitement.
+    # --- ONGLET 1 : RAPPORT ---
+    with tab_report:
+        st.subheader("Synthèse IA")
 
-Produit une synthèse structurée en 5 parties :
-1. Contexte & Objectifs
-2. Périmètre Technique & Fonctionnel
-3. Synthèse Financière (Budget, TJM, RAF, BDC)
-4. Risques (Planning, Budget, Tech)
-5. Recommandations
+        try:
+            system_prompt = load_prompt("rag_system_prompt.txt")
+        except Exception:
+            system_prompt = "Tu es un expert en analyse de documents de projet IT."
 
-Style : professionnel, clair, synthétique, en français.
-"""
-
-        st.divider()
-        st.subheader("📝 Rapport d'Analyse")
-        
-        with st.spinner("🧠 Rédaction du rapport en cours..."):
+        with st.spinner("✍️ Rédaction du rapport en cours..."):
             try:
-                response = completion(
+                response = safe_completion(
                     model=model_name,
                     messages=[
                         {"role": "system", "content": system_prompt},
-                        {
-                            "role": "user",
-                            "content": f"Voici des extraits de documents de projet. Utilise uniquement ces informations pour produire ton analyse.\n\n{context_str}"
-                        },
+                        {"role": "user", "content": f"Voici les extraits:\n\n{context_str}"}
                     ],
                     api_key=os.getenv("AZURE_API_KEY"),
                     api_base=os.getenv("AZURE_API_BASE"),
                     api_version=os.getenv("AZURE_API_VERSION")
                 )
-                
                 ai_text = response.choices[0].message.content
-                st.markdown(ai_text)
-                
-            except Exception as e:
-                st.error(f"Erreur LLM : {e}")
 
-        # --- SOURCES ---
-        st.markdown("---")
-        with st.expander("🔎 Consulter les extraits sources utilisés"):
-            for i, c in enumerate(selected_chunks):
-                st.markdown(f"**Source {i+1} : {c['doc_type']}** - {c['doc_name']}")
-                st.caption(c["content"][:600] + " [...]")
-                st.divider()
+                # Affichage joli type "Chat"
+                with st.chat_message("assistant", avatar="🤖"):
+                    st.markdown(ai_text)
+
+                st.toast("Analyse terminée avec succès !", icon="✅")
+
+                # Bouton de téléchargement
+                st.download_button(
+                    label="📥 Télécharger le rapport (.txt)",
+                    data=ai_text,
+                    file_name=f"Rapport_Analyse_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                    mime="text/plain"
+                )
+
+                # Métriques de coût pour ce run
+                output_tokens = response.usage.completion_tokens
+                input_tokens_used = response.usage.prompt_tokens
+                cost_info = calculate_cost(input_tokens_used, output_tokens, model_name)
+
+            except ConnectionError as e:
+                st.error("❌ Impossible de se connecter à l'API. Vérifiez votre connexion internet.")
+                logger.error(f"Erreur de connexion API : {e}")
+                st.stop()
+            except Exception as e:
+                st.error(f"❌ Erreur lors de la génération : {e}")
+                logger.error(f"Erreur génération : {e}")
+                st.stop()
+
+    # --- ONGLET 2 : SOURCES ---
+    with tab_sources:
+        st.info(f"💡 L'IA a basé son analyse sur **{len(selected_chunks)} segments** extraits de vos documents.")
+
+        for i, chunk in enumerate(selected_chunks):
+            with st.expander(f"📄 Source {i+1}: {chunk['doc_name']} ({chunk['doc_type']})"):
+                st.caption(f"Date: {chunk['date']}")
+                st.markdown(f"```text\n{chunk['content']}\n```")
+
+    # --- ONGLET 3 : TECHNIQUE & COÛTS ---
+    with tab_tech:
+        st.subheader("Métriques de la session")
+
+        # Métriques Globales
+        total_chunks_tokens = sum(estimate_tokens(c['content']) for c in chunks)
+        embedding_cost = calculate_cost(total_chunks_tokens, 0, embedding_model_name)['total_cost']
+        total_cost = cost_info['total_cost'] + embedding_cost
+
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Segments Indexés", len(chunks))
+        col2.metric("Tokens Indexés", f"{total_chunks_tokens:,}")
+        col3.metric("Tokens Générés", f"{output_tokens:,}")
+        col4.metric("Coût Total ($)", format_cost(total_cost))
+
+        st.markdown("### 📋 État des fichiers")
+        st.dataframe(pd.DataFrame(stats), width='stretch')
+
+        st.markdown("### 💰 Détail des coûts")
+        st.json({
+            "Modele LLM": model_name,
+            "Cout Entree LLM": format_cost(cost_info['input_cost']),
+            "Cout Sortie LLM": format_cost(cost_info['output_cost']),
+            "Cout Indexation (Embedding)": format_cost(embedding_cost),
+            "Total": format_cost(total_cost)
+        })

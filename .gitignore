@@ -1,4 +1,4 @@
-# --- Sécurité (Le plus important) ---
+# --- Sécurité ---
 .env
 .env.local
 .DS_Store
@@ -9,7 +9,7 @@ __pycache__/
 *.pyo
 *.pyd
 
-# --- Environnements virtuels (si tu en utilises) ---
+# --- Environnements virtuels ---
 venv/
 .venv/
 env/
@@ -18,8 +18,19 @@ env/
 .vscode/
 .idea/
 
-# --- Dossier Document clients ----
+# --- Dossier Document clients & prompts ----
 documents_types/
+prompts/
 
 # --- Sauvegarde locale du RAG ----
 *.pkl
+
+# --- Tests ---
+.pytest_cache/
+htmlcov/
+.coverage
+*.pyc
+__pycache__/
+
+# --- Logs ---
+*.log
