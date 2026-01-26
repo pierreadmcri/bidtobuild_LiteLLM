@@ -34,3 +34,7 @@ __pycache__/
 
 # --- Logs ---
 *.log
+
+# --- Cache et fichiers temporaires ---
+cache/
+*.pkl

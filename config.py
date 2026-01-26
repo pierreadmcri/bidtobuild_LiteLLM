@@ -107,8 +107,14 @@ RATE_LIMIT_DELAY = 0.1  # Délai entre chaque requête (secondes)
 # RAG CONFIGURATION
 # ==========================================
 
+# Dossier pour les fichiers de cache et temporaires
+CACHE_DIR = os.path.join(os.getcwd(), "cache")
+
+# Créer le dossier cache s'il n'existe pas
+os.makedirs(CACHE_DIR, exist_ok=True)
+
 # Fichier de cache pour les embeddings
-CACHE_FILE = "vector_store_cache.pkl"
+CACHE_FILE = os.path.join(CACHE_DIR, "vector_store_cache.pkl")
 
 # Paramètres par défaut pour le chunking
 DEFAULT_MAX_CHUNK_TOKENS = 600

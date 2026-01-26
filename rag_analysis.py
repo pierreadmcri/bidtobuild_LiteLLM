@@ -115,8 +115,8 @@ def read_file_content(filepath):
                                 image_bytes = base_image["image"]
                                 image_ext = base_image["ext"]
 
-                                # Sauvegarder temporairement l'image
-                                temp_image_path = f"/tmp/temp_pdf_image_{page_num}_{img_index}.{image_ext}"
+                                # Sauvegarder temporairement l'image dans le dossier cache
+                                temp_image_path = os.path.join(config.CACHE_DIR, f"temp_pdf_image_{page_num}_{img_index}.{image_ext}")
                                 with open(temp_image_path, "wb") as img_file:
                                     img_file.write(image_bytes)
 
