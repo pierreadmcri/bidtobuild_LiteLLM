@@ -14,7 +14,7 @@ from utils import (
     validate_file_path, validate_file_size, safe_completion, safe_embedding,
     estimate_tokens, calculate_cost, format_cost, load_prompt,
     rate_limiter, ValidationError, FileTooLargeError, logger,
-    extract_text_from_image
+    extract_text_from_image, extract_text_from_excel
 )
 
 # Imports lecture
@@ -144,6 +144,11 @@ def read_file_content(filepath):
 
             if not content.strip():
                 return "[Alerte : Aucun texte lisible extrait du PDF.]"
+
+        # === EXCEL ===
+        elif ext in [".xlsx", ".xlsm"]:
+            logger.info(f"Extraction Excel : {filepath}")
+            content = extract_text_from_excel(filepath)
 
         # === DOCX ===
         elif ext == ".docx":

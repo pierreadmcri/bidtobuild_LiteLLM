@@ -80,7 +80,7 @@ MAX_FILE_SIZE_BYTES = int(os.getenv("MAX_FILE_SIZE_BYTES", 50 * 1024 * 1024))
 MAX_INPUT_TOKENS = int(os.getenv("MAX_INPUT_TOKENS", 100000))
 
 # Extensions autorisées
-ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".jpg", ".jpeg", ".png"}
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".jpg", ".jpeg", ".png", ".xlsx", ".xlsm"}
 
 # Chemins interdits (sécurité)
 FORBIDDEN_PATH_PATTERNS = [
@@ -139,6 +139,23 @@ OCR_LANGUAGE = os.getenv("OCR_LANGUAGE", "fra+eng")
 # Résolution minimale pour améliorer la qualité OCR (upscaling)
 # Les images plus petites seront agrandies pour améliorer la reconnaissance
 MIN_OCR_DIMENSION = int(os.getenv("MIN_OCR_DIMENSION", 1000))
+
+# ==========================================
+# CONFIGURATION EXCEL
+# ==========================================
+
+# Nombre maximum d'onglets à extraire par fichier Excel (défaut: 2)
+MAX_EXCEL_SHEETS = int(os.getenv("MAX_EXCEL_SHEETS", 2))
+
+# Stratégie de sélection des onglets : 'first' (premiers onglets), 'auto' (détection intelligente)
+EXCEL_SHEET_STRATEGY = os.getenv("EXCEL_SHEET_STRATEGY", "auto")
+
+# Noms d'onglets à prioriser (séparés par des virgules)
+# Ex: "Budget,Planning,Synthese"
+EXCEL_PRIORITY_SHEETS = os.getenv("EXCEL_PRIORITY_SHEETS", "Budget,Synthèse,Planning,Summary,Recap")
+
+# Nombre maximum de lignes à extraire par onglet (0 = toutes les lignes)
+MAX_EXCEL_ROWS = int(os.getenv("MAX_EXCEL_ROWS", 1000))
 
 # ==========================================
 # TARIFICATION AZURE OPENAI (USD)

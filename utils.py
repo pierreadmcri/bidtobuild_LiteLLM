@@ -328,6 +328,137 @@ def extract_text_from_image(image_path: Union[str, Path], lang: str = None) -> s
         return f"[Erreur OCR : {str(e)}]"
 
 # ==========================================
+# EXTRACTION EXCEL
+# ==========================================
+
+def extract_text_from_excel(file_path: Union[str, Path], max_sheets: int = None, strategy: str = None) -> str:
+    """
+    Extrait le texte d'un fichier Excel (.xlsx, .xlsm) avec sélection intelligente des onglets.
+
+    Args:
+        file_path: Chemin vers le fichier Excel
+        max_sheets: Nombre maximum d'onglets à extraire (défaut: config.MAX_EXCEL_SHEETS)
+        strategy: Stratégie de sélection ('auto' ou 'first')
+
+    Returns:
+        Texte formaté extrait des onglets sélectionnés
+
+    Raises:
+        Exception: Si la lecture échoue
+    """
+    try:
+        import openpyxl
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        error_msg = "openpyxl non installé. Installation requise : pip install openpyxl"
+        logger.error(error_msg)
+        return f"[Erreur Excel : openpyxl non installé]"
+
+    max_sheets = max_sheets or config.MAX_EXCEL_SHEETS
+    strategy = strategy or config.EXCEL_SHEET_STRATEGY
+    max_rows = config.MAX_EXCEL_ROWS
+
+    try:
+        # Charger le workbook (data_only=True pour récupérer les valeurs calculées)
+        workbook = openpyxl.load_workbook(file_path, data_only=True, read_only=True)
+        sheet_names = workbook.sheetnames
+
+        logger.info(f"Fichier Excel chargé : {len(sheet_names)} onglet(s) trouvé(s)")
+
+        if not sheet_names:
+            return "[Alerte : Aucun onglet trouvé dans le fichier Excel]"
+
+        # Sélection des onglets selon la stratégie
+        selected_sheets = []
+
+        if strategy == "auto":
+            # Stratégie intelligente : prioriser certains noms d'onglets
+            priority_names = [name.strip() for name in config.EXCEL_PRIORITY_SHEETS.split(",")]
+
+            # 1. Chercher les onglets prioritaires
+            for priority in priority_names:
+                for sheet_name in sheet_names:
+                    if priority.lower() in sheet_name.lower() and sheet_name not in selected_sheets:
+                        selected_sheets.append(sheet_name)
+                        if len(selected_sheets) >= max_sheets:
+                            break
+                if len(selected_sheets) >= max_sheets:
+                    break
+
+            # 2. Compléter avec les premiers onglets si besoin
+            if len(selected_sheets) < max_sheets:
+                for sheet_name in sheet_names:
+                    if sheet_name not in selected_sheets:
+                        selected_sheets.append(sheet_name)
+                        if len(selected_sheets) >= max_sheets:
+                            break
+        else:
+            # Stratégie 'first' : prendre les N premiers onglets
+            selected_sheets = sheet_names[:max_sheets]
+
+        logger.info(f"Onglets sélectionnés : {selected_sheets}")
+
+        # Extraction du contenu
+        content = f"[FICHIER EXCEL: {Path(file_path).name}]\n"
+        content += f"Nombre total d'onglets : {len(sheet_names)}\n"
+        content += f"Onglets analysés : {', '.join(selected_sheets)}\n\n"
+
+        for sheet_name in selected_sheets:
+            try:
+                sheet = workbook[sheet_name]
+                content += f"\n{'='*60}\n"
+                content += f"ONGLET : {sheet_name}\n"
+                content += f"{'='*60}\n\n"
+
+                # Compter les lignes avec données
+                rows_with_data = 0
+                for row in sheet.iter_rows(values_only=True):
+                    if any(cell is not None for cell in row):
+                        rows_with_data += 1
+
+                # Extraire les données (limité par MAX_EXCEL_ROWS)
+                row_count = 0
+                for row_idx, row in enumerate(sheet.iter_rows(values_only=True), start=1):
+                    # Limiter le nombre de lignes
+                    if max_rows > 0 and row_count >= max_rows:
+                        content += f"\n... (lignes suivantes ignorées, limite : {max_rows} lignes)\n"
+                        break
+
+                    # Ignorer les lignes complètement vides
+                    if not any(cell is not None for cell in row):
+                        continue
+
+                    row_count += 1
+
+                    # Formater la ligne
+                    row_text = []
+                    for col_idx, cell_value in enumerate(row, start=1):
+                        if cell_value is not None:
+                            # Convertir en string et nettoyer
+                            cell_str = str(cell_value).strip()
+                            if cell_str:
+                                col_letter = get_column_letter(col_idx)
+                                row_text.append(f"{col_letter}: {cell_str}")
+
+                    if row_text:
+                        content += f"Ligne {row_idx}: " + " | ".join(row_text) + "\n"
+
+                content += f"\nTotal lignes avec données : {rows_with_data}\n"
+
+            except Exception as sheet_err:
+                logger.warning(f"Erreur lors de la lecture de l'onglet '{sheet_name}': {sheet_err}")
+                content += f"\n[Erreur lors de la lecture de l'onglet '{sheet_name}']\n"
+
+        workbook.close()
+        logger.info(f"Extraction Excel terminée : {len(selected_sheets)} onglet(s) traité(s)")
+
+        return content
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la lecture du fichier Excel {file_path}: {e}")
+        return f"[Erreur lecture Excel : {str(e)}]"
+
+# ==========================================
 # GESTION DES TOKENS
 # ==========================================
 

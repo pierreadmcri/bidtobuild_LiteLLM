@@ -17,7 +17,8 @@ from utils import (
     load_prompt,
     ValidationError,
     FileTooLargeError,
-    logger
+    logger,
+    extract_text_from_excel
 )
 
 # Imports pour lire les vrais fichiers
@@ -83,6 +84,9 @@ def read_file_content(filepath):
                 content += page_text + "\n"
             if not content.strip():
                 return "[Alerte : Aucun texte lisible extrait du PDF. Le document est peut-être scanné ou protégé.]"
+        elif ext in [".xlsx", ".xlsm"]:
+            logger.info(f"Extraction Excel : {filepath}")
+            content = extract_text_from_excel(filepath)
         elif ext == ".docx":
             doc = Document(filepath)
             for para in doc.paragraphs:
