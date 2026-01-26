@@ -393,10 +393,7 @@ if start_analysis:
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": full_context}
-                    ],
-                    api_key=os.getenv("AZURE_API_KEY"),
-                    api_base=os.getenv("AZURE_API_BASE"),
-                    api_version=os.getenv("AZURE_API_VERSION")
+                    ]
                 )
 
                 ai_reply = response.choices[0].message.content

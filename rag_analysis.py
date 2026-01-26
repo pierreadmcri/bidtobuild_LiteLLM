@@ -299,10 +299,7 @@ def get_embeddings_batch(texts):
         # Utilisation de safe_embedding qui gère le retry et rate limiting
         embeddings = safe_embedding(
             texts=texts,
-            model=embedding_model_name,
-            api_key=os.getenv("AZURE_API_KEY"),
-            api_base=os.getenv("AZURE_API_BASE"),
-            api_version=os.getenv("AZURE_API_VERSION")
+            model=embedding_model_name
         )
         return embeddings
 
@@ -624,10 +621,7 @@ if run_btn:
         with st.spinner("🧠 Recherche des passages pertinents..."):
             q_vec_list = safe_embedding(
                 texts=[neutral_query],
-                model=embedding_model_name,
-                api_key=os.getenv("AZURE_API_KEY"),
-                api_base=os.getenv("AZURE_API_BASE"),
-                api_version=os.getenv("AZURE_API_VERSION")
+                model=embedding_model_name
             )
             q_emb = np.array(q_vec_list[0], dtype=float)
 
@@ -690,10 +684,7 @@ if run_btn:
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": f"Voici les extraits:\n\n{context_str}"}
-                    ],
-                    api_key=os.getenv("AZURE_API_KEY"),
-                    api_base=os.getenv("AZURE_API_BASE"),
-                    api_version=os.getenv("AZURE_API_VERSION")
+                    ]
                 )
                 ai_text = response.choices[0].message.content
 

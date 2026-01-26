@@ -2,6 +2,7 @@
 Configuration centralisée pour l'application d'analyse de documents
 """
 import os
+import litellm
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -19,6 +20,54 @@ REQUIRED_ENV_VARS = ["AZURE_API_KEY", "AZURE_API_BASE", "AZURE_API_VERSION"]
 # Configuration du logging LiteLLM
 # Valeurs possibles: DEBUG, INFO, WARNING, ERROR
 LITELLM_LOG_LEVEL = os.getenv("LITELLM_LOG", "ERROR")  # Par défaut ERROR en production
+
+# ==========================================
+# INITIALISATION LITELLM (GESTION DES CLÉS API)
+# ==========================================
+
+def configure_litellm():
+    """
+    Configure LiteLLM avec les clés API de manière centralisée.
+    Cette fonction doit être appelée au démarrage de l'application.
+
+    Avantages :
+    - Configuration unique au lieu de passer les clés à chaque appel
+    - Support multi-provider (Azure, OpenAI, Anthropic, etc.)
+    - Gestion automatique des retry et timeout
+    - Logging centralisé
+    """
+    # Configuration du logging
+    litellm.set_verbose = (LITELLM_LOG_LEVEL == "DEBUG")
+
+    # Configuration Azure OpenAI
+    azure_api_key = os.getenv("AZURE_API_KEY")
+    azure_api_base = os.getenv("AZURE_API_BASE")
+    azure_api_version = os.getenv("AZURE_API_VERSION")
+
+    if azure_api_key and azure_api_base and azure_api_version:
+        # Configuration globale pour Azure
+        os.environ["AZURE_API_KEY"] = azure_api_key
+        os.environ["AZURE_API_BASE"] = azure_api_base
+        os.environ["AZURE_API_VERSION"] = azure_api_version
+
+        # Configuration LiteLLM
+        litellm.api_key = azure_api_key
+        litellm.api_base = azure_api_base
+        litellm.api_version = azure_api_version
+
+    # Support OpenAI (si disponible)
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    if openai_api_key:
+        os.environ["OPENAI_API_KEY"] = openai_api_key
+
+    # Configuration des timeouts et retry
+    litellm.request_timeout = int(os.getenv("LITELLM_TIMEOUT", "600"))  # 10 minutes
+    litellm.num_retries = int(os.getenv("LITELLM_NUM_RETRIES", "2"))
+
+    return True
+
+# Initialiser LiteLLM au chargement du module
+_litellm_configured = configure_litellm()
 
 # ==========================================
 # LIMITES & SÉCURITÉ
