@@ -192,7 +192,7 @@ def truncate_text_by_tokens(text, max_tokens):
 def process_files(selected_folder):
     # 1. Patterns mis à jour
     search_patterns = {
-        "RBO": r".*RBO.*",
+        "RPO": r".*RPO.*",
         "PTC": r".*PTC.*",
         "BCO": r".*BCO.*",
         "BDC": r".*BDC.*"
@@ -234,7 +234,7 @@ def process_files(selected_folder):
 # 3. INTERFACE
 # ==========================================
 
-st.title("📂 Scanner Automatique RBO/PTC/BCO")
+st.title("📂 Scanner Automatique RPO/PTC/BCO")
 
 # Zone de sélection du dossier
 default_path = os.path.join(os.getcwd(), "documents_types")
@@ -282,7 +282,7 @@ if start_analysis:
             st.error(error)
         elif not final_docs:
             progress_bar.progress(100, text="Fini.")
-            st.warning("Aucun fichier correspondant aux critères (RBO, PTC, BCO, BDC) n'a été trouvé.")
+            st.warning("Aucun fichier correspondant aux critères (RPO, PTC, BCO, BDC) n'a été trouvé.")
         else:
             # Affichage des logs de sélection
             with st.expander("Voir le détail de la sélection des fichiers", expanded=True):

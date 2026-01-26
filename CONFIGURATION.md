@@ -84,7 +84,7 @@ Configurables via l'interface Streamlit (sidebar) :
 |-------------------|----------------|---------|
 | **Documents techniques** (specs, code) | 400-500 | 80-100 |
 | **Documents financiers** (budgets, contrats) | 600-800 | 120-150 |
-| **Documents mixtes** (RBO, PTC) | 500-700 | 100-150 |
+| **Documents mixtes** (RPO, PTC) | 500-700 | 100-150 |
 | **Documents longs** (> 50 pages) | 800-1000 | 150-200 |
 
 ### Retrieval

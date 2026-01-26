@@ -398,7 +398,7 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
 
     # --- B. SCAN ET LECTURE ---
     search_patterns = {
-        "RBO": r".*RBO.*", "PTC": r".*PTC.*",
+        "RPO": r".*RPO.*", "PTC": r".*PTC.*",
         "BCO": r".*BCO.*", "BDC": r".*BDC.*"
     }
 
@@ -420,7 +420,7 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
             logs.append(f"⚠️ **{label}** : Non trouvé")
 
     if not selected_docs:
-        return None, None, logs, "Aucun document RBO/PTC/BCO/BDC détecté.", []
+        return None, None, logs, "Aucun document RPO/PTC/BCO/BDC détecté.", []
 
     # --- C. CHUNKING ---
     all_chunks = []
@@ -527,7 +527,7 @@ st.markdown("""
 with st.sidebar:
     st.title("🎛️ Contrôle")
 
-    st.info("Ce module analyse vos documents RBO, PTC, BCO et BDC pour générer une synthèse structurée.")
+    st.info("Ce module analyse vos documents RPO, PTC, BCO et BDC pour générer une synthèse structurée.")
 
     # Section Reset bien visible
     if st.button("🗑️ Vider le Cache", type="secondary", help="Force le rechargement complet des fichiers"):
@@ -561,7 +561,7 @@ with col_logo:
     st.markdown("# ⚡")
 with col_title:
     st.title("Analyseur de Projets IT")
-    st.markdown("RAG Intelligent • RBO / PTC / BCO / BDC")
+    st.markdown("RAG Intelligent • RPO / PTC / BCO / BDC")
 
 st.markdown("---")
 
