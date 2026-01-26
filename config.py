@@ -151,8 +151,8 @@ MAX_EXCEL_SHEETS = int(os.getenv("MAX_EXCEL_SHEETS", 2))
 EXCEL_SHEET_STRATEGY = os.getenv("EXCEL_SHEET_STRATEGY", "auto")
 
 # Noms d'onglets à prioriser (séparés par des virgules)
-# Ex: "Budget,Planning,Synthese"
-EXCEL_PRIORITY_SHEETS = os.getenv("EXCEL_PRIORITY_SHEETS", "Budget,Synthèse,Planning,Summary,Recap")
+# Ex: "Build,Run"
+EXCEL_PRIORITY_SHEETS = os.getenv("EXCEL_PRIORITY_SHEETS", "Build,Run")
 
 # Nombre maximum de lignes à extraire par onglet (0 = toutes les lignes)
 MAX_EXCEL_ROWS = int(os.getenv("MAX_EXCEL_ROWS", 1000))
