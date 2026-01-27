@@ -56,8 +56,8 @@ embedding_model_name = config.EMBEDDING_MODEL_NAME
 
 def read_file_content(filepath):
     """
-    Lecture robuste PDF/DOCX/TXT/IMAGES avec validation de taille.
-    Pour les PDFs, extrait aussi les images et les analyse avec Vision API.
+    Lecture robuste PDF/DOCX/TXT/EXCEL/IMAGES avec validation de taille.
+    Pour les PDFs, extrait aussi les images et utilise OCR (Tesseract) pour extraire le texte.
 
     Args:
         filepath: Chemin du fichier à lire
