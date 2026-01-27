@@ -338,7 +338,10 @@ def extract_text_from_excel(file_path: Union[str, Path], max_sheets: int = None,
     Args:
         file_path: Chemin vers le fichier Excel
         max_sheets: Nombre maximum d'onglets à extraire (défaut: config.MAX_EXCEL_SHEETS)
-        strategy: Stratégie de sélection ('auto' ou 'first')
+        strategy: Stratégie de sélection ('exact', 'auto' ou 'first')
+                  - 'exact': Correspondance stricte du nom d'onglet (recommandé)
+                  - 'auto': Recherche partielle dans le nom d'onglet
+                  - 'first': Prend les N premiers onglets
 
     Returns:
         Texte formaté extrait des onglets sélectionnés
@@ -371,11 +374,32 @@ def extract_text_from_excel(file_path: Union[str, Path], max_sheets: int = None,
         # Sélection des onglets selon la stratégie
         selected_sheets = []
 
-        if strategy == "auto":
-            # Stratégie intelligente : prioriser certains noms d'onglets
+        if strategy == "exact":
+            # Stratégie exacte : correspondance stricte du nom d'onglet
             priority_names = [name.strip() for name in config.EXCEL_PRIORITY_SHEETS.split(",")]
 
-            # 1. Chercher les onglets prioritaires
+            # Chercher les onglets avec correspondance exacte
+            for priority in priority_names:
+                for sheet_name in sheet_names:
+                    # Correspondance exacte (insensible à la casse)
+                    if sheet_name.strip().lower() == priority.lower() and sheet_name not in selected_sheets:
+                        selected_sheets.append(sheet_name)
+                        logger.info(f"Onglet trouvé (correspondance exacte) : {sheet_name}")
+                        if len(selected_sheets) >= max_sheets:
+                            break
+                if len(selected_sheets) >= max_sheets:
+                    break
+
+            # Si on n'a pas trouvé tous les onglets, loguer un avertissement
+            if len(selected_sheets) < len(priority_names):
+                missing = [p for p in priority_names if p not in [s.strip() for s in selected_sheets]]
+                logger.warning(f"Onglets non trouvés : {', '.join(missing)}")
+
+        elif strategy == "auto":
+            # Stratégie intelligente : recherche partielle dans le nom
+            priority_names = [name.strip() for name in config.EXCEL_PRIORITY_SHEETS.split(",")]
+
+            # 1. Chercher les onglets prioritaires (recherche partielle)
             for priority in priority_names:
                 for sheet_name in sheet_names:
                     if priority.lower() in sheet_name.lower() and sheet_name not in selected_sheets:

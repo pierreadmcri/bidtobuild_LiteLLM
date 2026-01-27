@@ -153,8 +153,8 @@ MIN_OCR_DIMENSION = int(os.getenv("MIN_OCR_DIMENSION", 1000))
 # Nombre maximum d'onglets à extraire par fichier Excel (défaut: 2)
 MAX_EXCEL_SHEETS = int(os.getenv("MAX_EXCEL_SHEETS", 2))
 
-# Stratégie de sélection des onglets : 'first' (premiers onglets), 'auto' (détection intelligente)
-EXCEL_SHEET_STRATEGY = os.getenv("EXCEL_SHEET_STRATEGY", "auto")
+# Stratégie de sélection des onglets : 'exact' (correspondance stricte), 'auto' (recherche partielle), 'first' (premiers onglets)
+EXCEL_SHEET_STRATEGY = os.getenv("EXCEL_SHEET_STRATEGY", "exact")
 
 # Noms d'onglets à prioriser (séparés par des virgules)
 # Ex: "Build,Run"
