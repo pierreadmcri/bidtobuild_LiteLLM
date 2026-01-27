@@ -7,23 +7,23 @@ Ce document présente les différentes options d'architecture envisagées pour l
 ```mermaid
 flowchart LR
 
-  subgraph OPT1[Option 1]
-    O1A[Home page] --> O1B[Sélection techno] --> O1C[Choix du client] --> O1D[Lancement du script]
+  subgraph OPT1["Option 1"]
+    O1A["Home page"] --> O1B["Selection techno"] --> O1C["Choix du client"] --> O1D["Lancement du script"]
   end
 
-  subgraph OPT2[Option 2]
-    O2A[Home page] --> O2B[Choix du client] --> O2C[Détection techno] --> O2D[Lancement du script]
+  subgraph OPT2["Option 2"]
+    O2A["Home page"] --> O2B["Choix du client"] --> O2C["Detection techno"] --> O2D["Lancement du script"]
   end
 
-  subgraph BRAVO[A tester : solution Bravo]
-    B1[Dossier : documents (tous clients)] --> B2[RAG : Vectorisation] --> B3[IHM : Choix du client]
-    B3 --> B4[Lancement du script (.py)]
-    NOTE1[[+ Script qui ajoute dynamiquement\nles nouveaux docs/clients dans le RAG]]
+  subgraph BRAVO["A tester - Solution Bravo"]
+    B1["Dossier documents tous clients"] --> B2["RAG Vectorisation"] --> B3["IHM Choix du client"]
+    B3 --> B4["Lancement du script py"]
+    NOTE1["+ Script ajout dynamique des nouveaux docs clients dans le RAG"]
   end
 
-  subgraph ALPHA[Solution Alpha]
-    A1[IHM : Choix du répertoire client] --> A2[RAG : Vectorisation] --> A3[Lancement du script]
-    Q1[[Un RAG est créé pour chaque client ?]]
+  subgraph ALPHA["Solution Alpha"]
+    A1["IHM Choix du repertoire client"] --> A2["RAG Vectorisation"] --> A3["Lancement du script"]
+    Q1["Un RAG est cree pour chaque client ?"]
   end
 ```
 
