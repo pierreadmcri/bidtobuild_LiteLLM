@@ -497,11 +497,11 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
 
     return all_chunks, np_embeddings, logs, None, stats
 
-# ==========================================
-# 5. INTERFACE STREAMLIT (REFONDUE UX/UI)
-# ==========================================
+# =======================
+# 5. INTERFACE STREAMLIT 
+# =======================
 
-# --- CSS PERSONNALISÉ POUR UN LOOK PLUS PRO ---
+# --- CSS PERSONNALISÉ ---
 st.markdown("""
 <style>
     .stMetric {
@@ -621,7 +621,13 @@ if run_btn:
     # 2. RECHERCHE VECTORIELLE
     try:
         # Embedding query neutre
-        neutral_query = "Analyse globale de ce projet IT (contexte, périmètre, finances, risques, recommandations)."
+        neutral_query = """
+                        Réunion de Lancement Interne projet Cloud : contexte et périmètre BUILD, 
+                        charges BUILD et RUN détaillées en jours-homme avec CCJM, budget et marge brute, 
+                        macro-planning avec jalons et dates, équipe Orange Business et rôles, 
+                        risques projet et actions, méthodologie et livrables, organisation transition RUN, 
+                        prérequis et fournitures client, validation contractuelle intégration CRM
+                        """
 
         with st.spinner("🧠 Recherche des passages pertinents..."):
             q_vec_list = safe_embedding(
