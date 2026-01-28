@@ -622,7 +622,7 @@ if run_btn:
     try:
         # Embedding query neutre
         neutral_query = """
-                        Réunion de Lancement Interne projet Cloud : contexte et périmètre BUILD, 
+                        Réunion de Lancement Interne projet: contexte et périmètre BUILD, 
                         charges BUILD et RUN détaillées en jours-homme avec CCJM, budget et marge brute, 
                         macro-planning avec jalons et dates, équipe Orange Business et rôles, 
                         risques projet et actions, méthodologie et livrables, organisation transition RUN, 
