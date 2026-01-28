@@ -44,11 +44,43 @@ for var in config.REQUIRED_ENV_VARS:
     os.environ[var] = value
 
 # Constantes
-CACHE_FILE = config.CACHE_FILE
 NB_WORKERS = config.NB_WORKERS
 BATCH_SIZE = config.BATCH_SIZE
 model_name = config.MODEL_NAME
 embedding_model_name = config.EMBEDDING_MODEL_NAME
+
+# ==========================================
+# HELPER: CACHE PAR CLIENT
+# ==========================================
+
+def get_cache_file_for_client(folder_path: str) -> str:
+    """
+    Génère le nom de fichier cache spécifique au client basé sur le chemin du dossier.
+
+    Args:
+        folder_path: Chemin du dossier client (ex: "/path/to/client_name")
+
+    Returns:
+        Chemin complet du fichier cache (ex: "cache/client_name_vector_store.pkl")
+
+    Exemples:
+        /home/user/documents/ClientA -> cache/ClientA_vector_store.pkl
+        /data/clients/ACME Corp -> cache/ACME_Corp_vector_store.pkl
+    """
+    # Extraire le nom du client (dernier segment du chemin)
+    client_name = Path(folder_path).name
+
+    # Sanitize: remplacer les caractères spéciaux par des underscores
+    # Garder seulement alphanumériques, tirets, underscores
+    sanitized_name = re.sub(r'[^\w\-]', '_', client_name)
+
+    # Éviter les noms vides
+    if not sanitized_name or sanitized_name == '_':
+        sanitized_name = "default_client"
+
+    # Générer le chemin complet
+    cache_filename = f"{sanitized_name}_vector_store.pkl"
+    return os.path.join(config.CACHE_DIR, cache_filename)
 
 # ==========================================
 # 1. FONCTIONS UTILITAIRES
@@ -373,22 +405,25 @@ def mmr(embeddings: np.ndarray, query_emb: np.ndarray, k: int, lambda_mult: floa
 def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, overlap_tokens: int):
     """
     Charge les documents, les découpe en segments, calcule les embeddings.
-    Utilise un cache disque + cache Streamlit.
+    Utilise un cache disque par client + cache Streamlit.
     """
     logs = []
     stats = []
 
-    # --- A. VERIFICATION CACHE DISQUE ---
-    if os.path.exists(CACHE_FILE):
+    # --- A. VERIFICATION CACHE DISQUE (PAR CLIENT) ---
+    client_cache_file = get_cache_file_for_client(folder_path)
+    client_name = Path(folder_path).name
+
+    if os.path.exists(client_cache_file):
         try:
-            with open(CACHE_FILE, "rb") as f:
+            with open(client_cache_file, "rb") as f:
                 saved_data = pickle.load(f)
             if (
                 saved_data.get("folder") == folder_path
                 and saved_data.get("max_chunk_tokens") == max_chunk_tokens
                 and saved_data.get("overlap_tokens") == overlap_tokens
             ):
-                logs.append("⚡ Données chargées depuis le disque (Cache local).")
+                logs.append(f"⚡ Données chargées depuis le cache client '{client_name}'.")
                 return (
                     saved_data["chunks"],
                     saved_data["embeddings"],
@@ -479,7 +514,7 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
 
     np_embeddings = np.array(final_embeddings, dtype=float)
 
-    # --- E. SAUVEGARDE SUR DISQUE ---
+    # --- E. SAUVEGARDE SUR DISQUE (PAR CLIENT) ---
     try:
         data_to_save = {
             "folder": folder_path,
@@ -489,9 +524,9 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
             "max_chunk_tokens": max_chunk_tokens,
             "overlap_tokens": overlap_tokens,
         }
-        with open(CACHE_FILE, "wb") as f:
+        with open(client_cache_file, "wb") as f:
             pickle.dump(data_to_save, f)
-        logs.append("💾 Sauvegarde locale créée (chargement instantané au prochain coup).")
+        logs.append(f"💾 Cache sauvegardé pour le client '{client_name}'.")
     except Exception as e:
         logs.append(f"⚠️ Echec sauvegarde cache: {e}")
 
@@ -535,11 +570,24 @@ with st.sidebar:
     st.info("Ce module analyse vos documents RPO, PTC, BCO et BDC pour générer une synthèse structurée.")
 
     # Section Reset bien visible
-    if st.button("🗑️ Vider le Cache", type="secondary", help="Force le rechargement complet des fichiers"):
+    if st.button("🗑️ Vider le Cache", type="secondary", help="Supprime tous les caches clients et force le rechargement"):
         st.cache_resource.clear()
-        if os.path.exists(CACHE_FILE):
-            os.remove(CACHE_FILE)
-        st.toast("Cache vidé avec succès !", icon="🗑️")
+
+        # Supprimer tous les fichiers .pkl dans le dossier cache
+        deleted_count = 0
+        if os.path.exists(config.CACHE_DIR):
+            cache_files = [f for f in os.listdir(config.CACHE_DIR) if f.endswith('.pkl')]
+            for cache_file in cache_files:
+                try:
+                    os.remove(os.path.join(config.CACHE_DIR, cache_file))
+                    deleted_count += 1
+                except Exception as e:
+                    logger.warning(f"Impossible de supprimer {cache_file}: {e}")
+
+        if deleted_count > 0:
+            st.toast(f"🗑️ {deleted_count} cache(s) client supprimé(s) !", icon="✅")
+        else:
+            st.toast("Aucun cache à supprimer", icon="ℹ️")
         st.rerun()
 
     st.markdown("---")
