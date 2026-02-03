@@ -183,8 +183,14 @@ rate_limiter = RateLimiter()
 def safe_completion(*args, **kwargs):
     """
     Wrapper sécurisé pour litellm.completion avec retry et rate limiting
+
+    Note: Ajoute automatiquement api_base pour le proxy OpenAI
     """
     rate_limiter.wait()
+
+    # Ajouter api_base si non spécifié (pour éviter que LiteLLM n'enlève le préfixe "openai/")
+    if 'api_base' not in kwargs:
+        kwargs['api_base'] = config.OPENAI_API_BASE
 
     try:
         response = completion(*args, **kwargs)
@@ -236,9 +242,11 @@ def safe_embedding(texts: List[str], model: str = None, **kwargs):
             safe_texts.append(text[:32000])
 
     try:
+        # Passer api_base explicitement pour éviter que LiteLLM n'enlève le préfixe "openai/"
         response = embedding(
             model=model,
             input=safe_texts,
+            api_base=config.OPENAI_API_BASE,
             **kwargs
         )
 

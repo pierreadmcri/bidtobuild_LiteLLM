@@ -14,6 +14,9 @@ load_dotenv()
 MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-4.1-mini")
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "openai/text-embedding-3-small")
 
+# URL du proxy/API OpenAI
+OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "https://llmproxy.ai.orange")
+
 # Variables OpenAI obligatoires
 # Note: API_VERSION n'est pas nécessaire pour OpenAI (uniquement pour Azure)
 REQUIRED_ENV_VARS = ["OPENAI_API_KEY", "OPENAI_API_BASE"]
@@ -36,23 +39,26 @@ def configure_litellm():
     - Support multi-provider (OpenAI, Azure, Anthropic, etc.)
     - Gestion automatique des retry et timeout
     - Logging centralisé
+
+    Note importante:
+    - Pour les proxies OpenAI, on configure seulement la clé globalement
+    - L'api_base doit être passé en paramètre de chaque appel pour éviter
+      que LiteLLM n'enlève le préfixe "openai/" des modèles
     """
     # Configuration du logging
     litellm.set_verbose = (LITELLM_LOG_LEVEL == "DEBUG")
 
     # Configuration OpenAI (avec support proxy)
     openai_api_key = os.getenv("OPENAI_API_KEY")
-    openai_api_base = os.getenv("OPENAI_API_BASE")
 
     if openai_api_key:
-        # Configuration globale pour OpenAI
+        # Configuration globale pour OpenAI (clé seulement)
         os.environ["OPENAI_API_KEY"] = openai_api_key
         litellm.api_key = openai_api_key
 
-        # Configuration du proxy/base URL si spécifié (ex: https://llmproxy.ai.orange)
-        if openai_api_base:
-            os.environ["OPENAI_API_BASE"] = openai_api_base
-            litellm.api_base = openai_api_base
+        # NOTE: On ne configure PAS litellm.api_base globalement
+        # car cela causerait LiteLLM à enlever le préfixe "openai/" des modèles
+        # L'api_base sera passé en paramètre de chaque appel
 
     # Configuration des timeouts et retry
     litellm.request_timeout = int(os.getenv("LITELLM_TIMEOUT", "600"))  # 10 minutes
