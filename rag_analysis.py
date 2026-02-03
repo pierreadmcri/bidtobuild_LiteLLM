@@ -14,7 +14,7 @@ from utils import (
     validate_file_path, validate_file_size, safe_completion, safe_embedding,
     estimate_tokens, calculate_cost, format_cost, load_prompt,
     rate_limiter, ValidationError, FileTooLargeError, logger,
-    extract_text_from_image
+    extract_text_from_image, extract_text_from_excel
 )
 
 # Imports lecture
@@ -33,8 +33,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Configuration Log & Env
-os.environ['LITELLM_LOG'] = config.LITELLM_LOG_LEVEL
+# Configuration Env
 for var in config.REQUIRED_ENV_VARS:
     value = os.getenv(var)
     if not value:
@@ -44,11 +43,43 @@ for var in config.REQUIRED_ENV_VARS:
     os.environ[var] = value
 
 # Constantes
-CACHE_FILE = config.CACHE_FILE
 NB_WORKERS = config.NB_WORKERS
 BATCH_SIZE = config.BATCH_SIZE
 model_name = config.MODEL_NAME
 embedding_model_name = config.EMBEDDING_MODEL_NAME
+
+# ==========================================
+# HELPER: CACHE PAR CLIENT
+# ==========================================
+
+def get_cache_file_for_client(folder_path: str) -> str:
+    """
+    Génère le nom de fichier cache spécifique au client basé sur le chemin du dossier.
+
+    Args:
+        folder_path: Chemin du dossier client (ex: "/path/to/client_name")
+
+    Returns:
+        Chemin complet du fichier cache (ex: "cache/client_name_vector_store.pkl")
+
+    Exemples:
+        /home/user/documents/ClientA -> cache/ClientA_vector_store.pkl
+        /data/clients/ACME Corp -> cache/ACME_Corp_vector_store.pkl
+    """
+    # Extraire le nom du client (dernier segment du chemin)
+    client_name = Path(folder_path).name
+
+    # Sanitize: remplacer les caractères spéciaux par des underscores
+    # Garder seulement alphanumériques, tirets, underscores
+    sanitized_name = re.sub(r'[^\w\-]', '_', client_name)
+
+    # Éviter les noms vides
+    if not sanitized_name or sanitized_name == '_':
+        sanitized_name = "default_client"
+
+    # Générer le chemin complet
+    cache_filename = f"{sanitized_name}_vector_store.pkl"
+    return os.path.join(config.CACHE_DIR, cache_filename)
 
 # ==========================================
 # 1. FONCTIONS UTILITAIRES
@@ -56,8 +87,8 @@ embedding_model_name = config.EMBEDDING_MODEL_NAME
 
 def read_file_content(filepath):
     """
-    Lecture robuste PDF/DOCX/TXT/IMAGES avec validation de taille.
-    Pour les PDFs, extrait aussi les images et les analyse avec Vision API.
+    Lecture robuste PDF/DOCX/TXT/EXCEL/IMAGES avec validation de taille.
+    Pour les PDFs, extrait aussi les images et utilise OCR (Tesseract) pour extraire le texte.
 
     Args:
         filepath: Chemin du fichier à lire
@@ -115,8 +146,8 @@ def read_file_content(filepath):
                                 image_bytes = base_image["image"]
                                 image_ext = base_image["ext"]
 
-                                # Sauvegarder temporairement l'image
-                                temp_image_path = f"/tmp/temp_pdf_image_{page_num}_{img_index}.{image_ext}"
+                                # Sauvegarder temporairement l'image dans le dossier cache
+                                temp_image_path = os.path.join(config.CACHE_DIR, f"temp_pdf_image_{page_num}_{img_index}.{image_ext}")
                                 with open(temp_image_path, "wb") as img_file:
                                     img_file.write(image_bytes)
 
@@ -144,6 +175,11 @@ def read_file_content(filepath):
 
             if not content.strip():
                 return "[Alerte : Aucun texte lisible extrait du PDF.]"
+
+        # === EXCEL ===
+        elif ext in [".xlsx", ".xlsm"]:
+            logger.info(f"Extraction Excel : {filepath}")
+            content = extract_text_from_excel(filepath)
 
         # === DOCX ===
         elif ext == ".docx":
@@ -299,10 +335,7 @@ def get_embeddings_batch(texts):
         # Utilisation de safe_embedding qui gère le retry et rate limiting
         embeddings = safe_embedding(
             texts=texts,
-            model=embedding_model_name,
-            api_key=os.getenv("AZURE_API_KEY"),
-            api_base=os.getenv("AZURE_API_BASE"),
-            api_version=os.getenv("AZURE_API_VERSION")
+            model=embedding_model_name
         )
         return embeddings
 
@@ -371,22 +404,25 @@ def mmr(embeddings: np.ndarray, query_emb: np.ndarray, k: int, lambda_mult: floa
 def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, overlap_tokens: int):
     """
     Charge les documents, les découpe en segments, calcule les embeddings.
-    Utilise un cache disque + cache Streamlit.
+    Utilise un cache disque par client + cache Streamlit.
     """
     logs = []
     stats = []
 
-    # --- A. VERIFICATION CACHE DISQUE ---
-    if os.path.exists(CACHE_FILE):
+    # --- A. VERIFICATION CACHE DISQUE (PAR CLIENT) ---
+    client_cache_file = get_cache_file_for_client(folder_path)
+    client_name = Path(folder_path).name
+
+    if os.path.exists(client_cache_file):
         try:
-            with open(CACHE_FILE, "rb") as f:
+            with open(client_cache_file, "rb") as f:
                 saved_data = pickle.load(f)
             if (
                 saved_data.get("folder") == folder_path
                 and saved_data.get("max_chunk_tokens") == max_chunk_tokens
                 and saved_data.get("overlap_tokens") == overlap_tokens
             ):
-                logs.append("⚡ Données chargées depuis le disque (Cache local).")
+                logs.append(f"⚡ Données chargées depuis le cache client '{client_name}'.")
                 return (
                     saved_data["chunks"],
                     saved_data["embeddings"],
@@ -401,7 +437,7 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
 
     # --- B. SCAN ET LECTURE ---
     search_patterns = {
-        "RBO": r".*RBO.*", "PTC": r".*PTC.*",
+        "RPO": r".*RPO.*", "PTC": r".*PTC.*",
         "BCO": r".*BCO.*", "BDC": r".*BDC.*"
     }
 
@@ -423,7 +459,7 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
             logs.append(f"⚠️ **{label}** : Non trouvé")
 
     if not selected_docs:
-        return None, None, logs, "Aucun document RBO/PTC/BCO/BDC détecté.", []
+        return None, None, logs, "Aucun document RPO/PTC/BCO/BDC détecté.", []
 
     # --- C. CHUNKING ---
     all_chunks = []
@@ -477,7 +513,7 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
 
     np_embeddings = np.array(final_embeddings, dtype=float)
 
-    # --- E. SAUVEGARDE SUR DISQUE ---
+    # --- E. SAUVEGARDE SUR DISQUE (PAR CLIENT) ---
     try:
         data_to_save = {
             "folder": folder_path,
@@ -487,19 +523,19 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
             "max_chunk_tokens": max_chunk_tokens,
             "overlap_tokens": overlap_tokens,
         }
-        with open(CACHE_FILE, "wb") as f:
+        with open(client_cache_file, "wb") as f:
             pickle.dump(data_to_save, f)
-        logs.append("💾 Sauvegarde locale créée (chargement instantané au prochain coup).")
+        logs.append(f"💾 Cache sauvegardé pour le client '{client_name}'.")
     except Exception as e:
         logs.append(f"⚠️ Echec sauvegarde cache: {e}")
 
     return all_chunks, np_embeddings, logs, None, stats
 
-# ==========================================
-# 5. INTERFACE STREAMLIT (REFONDUE UX/UI)
-# ==========================================
+# =======================
+# 5. INTERFACE STREAMLIT 
+# =======================
 
-# --- CSS PERSONNALISÉ POUR UN LOOK PLUS PRO ---
+# --- CSS PERSONNALISÉ ---
 st.markdown("""
 <style>
     .stMetric {
@@ -530,14 +566,27 @@ st.markdown("""
 with st.sidebar:
     st.title("🎛️ Contrôle")
 
-    st.info("Ce module analyse vos documents RBO, PTC, BCO et BDC pour générer une synthèse structurée.")
+    st.info("Ce module analyse vos documents RPO, PTC, BCO et BDC pour générer une synthèse structurée.")
 
     # Section Reset bien visible
-    if st.button("🗑️ Vider le Cache", type="secondary", help="Force le rechargement complet des fichiers"):
+    if st.button("🗑️ Vider le Cache", type="secondary", help="Supprime tous les caches clients et force le rechargement"):
         st.cache_resource.clear()
-        if os.path.exists(CACHE_FILE):
-            os.remove(CACHE_FILE)
-        st.toast("Cache vidé avec succès !", icon="🗑️")
+
+        # Supprimer tous les fichiers .pkl dans le dossier cache
+        deleted_count = 0
+        if os.path.exists(config.CACHE_DIR):
+            cache_files = [f for f in os.listdir(config.CACHE_DIR) if f.endswith('.pkl')]
+            for cache_file in cache_files:
+                try:
+                    os.remove(os.path.join(config.CACHE_DIR, cache_file))
+                    deleted_count += 1
+                except Exception as e:
+                    logger.warning(f"Impossible de supprimer {cache_file}: {e}")
+
+        if deleted_count > 0:
+            st.toast(f"🗑️ {deleted_count} cache(s) client supprimé(s) !", icon="✅")
+        else:
+            st.toast("Aucun cache à supprimer", icon="ℹ️")
         st.rerun()
 
     st.markdown("---")
@@ -564,7 +613,7 @@ with col_logo:
     st.markdown("# ⚡")
 with col_title:
     st.title("Analyseur de Projets IT")
-    st.markdown("RAG Intelligent • RBO / PTC / BCO / BDC")
+    st.markdown("RAG Intelligent • RPO / PTC / BCO / BDC")
 
 st.markdown("---")
 
@@ -619,15 +668,18 @@ if run_btn:
     # 2. RECHERCHE VECTORIELLE
     try:
         # Embedding query neutre
-        neutral_query = "Analyse globale de ce projet IT (contexte, périmètre, finances, risques, recommandations)."
+        neutral_query = """
+                        Réunion de Lancement Interne projet: contexte et périmètre BUILD, 
+                        charges BUILD et RUN détaillées en jours-homme avec CCJM, budget et marge brute, 
+                        macro-planning avec jalons et dates, équipe Orange Business et rôles, 
+                        risques projet et actions, méthodologie et livrables, organisation transition RUN, 
+                        prérequis et fournitures client, validation contractuelle intégration CRM
+                        """
 
         with st.spinner("🧠 Recherche des passages pertinents..."):
             q_vec_list = safe_embedding(
                 texts=[neutral_query],
-                model=embedding_model_name,
-                api_key=os.getenv("AZURE_API_KEY"),
-                api_base=os.getenv("AZURE_API_BASE"),
-                api_version=os.getenv("AZURE_API_VERSION")
+                model=embedding_model_name
             )
             q_emb = np.array(q_vec_list[0], dtype=float)
 
@@ -690,10 +742,7 @@ if run_btn:
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": f"Voici les extraits:\n\n{context_str}"}
-                    ],
-                    api_key=os.getenv("AZURE_API_KEY"),
-                    api_base=os.getenv("AZURE_API_BASE"),
-                    api_version=os.getenv("AZURE_API_VERSION")
+                    ]
                 )
                 ai_text = response.choices[0].message.content
 

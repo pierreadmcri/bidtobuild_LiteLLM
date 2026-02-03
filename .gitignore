@@ -14,23 +14,22 @@ venv/
 .venv/
 env/
 
-# --- IDE (optionnel mais recommandé) ---
+# --- IDE ---
 .vscode/
 .idea/
 
-# --- Dossier Document clients & prompts ----
+# --- Dossiers projet ---
 documents_types/
 prompts/
-
-# --- Sauvegarde locale du RAG ----
-*.pkl
 
 # --- Tests ---
 .pytest_cache/
 htmlcov/
 .coverage
-*.pyc
-__pycache__/
 
 # --- Logs ---
 *.log
+
+# --- Cache et fichiers temporaires ---
+cache/
+*.pkl

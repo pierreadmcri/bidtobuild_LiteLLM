@@ -7,18 +7,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ==========================================
-# CONFIGURATION AZURE / LLM
+# CONFIGURATION OPENAI / LLM
 # ==========================================
 
-MODEL_NAME = os.getenv("MODEL_NAME", "azure/gpt-4.1-mini")
-EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "azure/text-embedding-3-small")
+MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-4.1-mini")
+EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "openai/text-embedding-3-small")
 
-# Variables Azure obligatoires
-REQUIRED_ENV_VARS = ["AZURE_API_KEY", "AZURE_API_BASE", "AZURE_API_VERSION"]
+# URL du proxy/API OpenAI
+OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "https://llmproxy.ai.orange")
 
-# Configuration du logging LiteLLM
-# Valeurs possibles: DEBUG, INFO, WARNING, ERROR
-LITELLM_LOG_LEVEL = os.getenv("LITELLM_LOG", "ERROR")  # Par défaut ERROR en production
+# Variables OpenAI obligatoires
+REQUIRED_ENV_VARS = ["OPENAI_API_KEY", "OPENAI_API_BASE"]
 
 # ==========================================
 # LIMITES & SÉCURITÉ
@@ -31,7 +30,7 @@ MAX_FILE_SIZE_BYTES = int(os.getenv("MAX_FILE_SIZE_BYTES", 50 * 1024 * 1024))
 MAX_INPUT_TOKENS = int(os.getenv("MAX_INPUT_TOKENS", 100000))
 
 # Extensions autorisées
-ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".jpg", ".jpeg", ".png"}
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".jpg", ".jpeg", ".png", ".xlsx", ".xlsm"}
 
 # Chemins interdits (sécurité)
 FORBIDDEN_PATH_PATTERNS = [
@@ -58,8 +57,14 @@ RATE_LIMIT_DELAY = 0.1  # Délai entre chaque requête (secondes)
 # RAG CONFIGURATION
 # ==========================================
 
+# Dossier pour les fichiers de cache et temporaires
+CACHE_DIR = os.path.join(os.getcwd(), "cache")
+
+# Créer le dossier cache s'il n'existe pas
+os.makedirs(CACHE_DIR, exist_ok=True)
+
 # Fichier de cache pour les embeddings
-CACHE_FILE = "vector_store_cache.pkl"
+CACHE_FILE = os.path.join(CACHE_DIR, "vector_store_cache.pkl")
 
 # Paramètres par défaut pour le chunking
 DEFAULT_MAX_CHUNK_TOKENS = 600
@@ -92,52 +97,69 @@ OCR_LANGUAGE = os.getenv("OCR_LANGUAGE", "fra+eng")
 MIN_OCR_DIMENSION = int(os.getenv("MIN_OCR_DIMENSION", 1000))
 
 # ==========================================
-# TARIFICATION AZURE OPENAI (USD)
+# CONFIGURATION EXCEL
+# ==========================================
+
+# Nombre maximum d'onglets à extraire par fichier Excel (défaut: 2)
+MAX_EXCEL_SHEETS = int(os.getenv("MAX_EXCEL_SHEETS", 2))
+
+# Stratégie de sélection des onglets : 'exact' (correspondance stricte), 'auto' (recherche partielle), 'first' (premiers onglets)
+EXCEL_SHEET_STRATEGY = os.getenv("EXCEL_SHEET_STRATEGY", "exact")
+
+# Noms d'onglets à prioriser (séparés par des virgules)
+# Ex: "Build,Run"
+EXCEL_PRIORITY_SHEETS = os.getenv("EXCEL_PRIORITY_SHEETS", "Build,Run")
+
+# Nombre maximum de lignes à extraire par onglet (0 = toutes les lignes)
+MAX_EXCEL_ROWS = int(os.getenv("MAX_EXCEL_ROWS", 1000))
+
+# ==========================================
+# TARIFICATION OPENAI (USD)
 # ==========================================
 
 # Tarifs par 1000 tokens (mise à jour: Janvier 2025)
-# Source: https://azure.microsoft.com/pricing/details/cognitive-services/openai-service/
+# Source: https://openai.com/api/pricing/
 
 PRICING = {
     # GPT-4o
-    "azure/gpt-4o": {
+    "openai/gpt-4o": {
         "input": 0.0025,    # $2.50 / 1M tokens
         "output": 0.01,     # $10.00 / 1M tokens
     },
-    "azure/gpt-4o-mini": {
+    "openai/gpt-4o-mini": {
         "input": 0.00015,   # $0.15 / 1M tokens
         "output": 0.0006,   # $0.60 / 1M tokens
     },
     # GPT-4.1 Mini (modèle déployé)
-    "azure/gpt-4.1-mini": {
+    "openai/gpt-4.1-mini": {
         "input": 0.00015,   # $0.15 / 1M tokens
         "output": 0.0006,   # $0.60 / 1M tokens
     },
     # GPT-4 Turbo
-    "azure/gpt-4-turbo": {
+    "openai/gpt-4-turbo": {
         "input": 0.01,      # $10.00 / 1M tokens
         "output": 0.03,     # $30.00 / 1M tokens
     },
     # GPT-4 (anciennes versions)
-    "azure/gpt-4": {
+    "openai/gpt-4": {
         "input": 0.03,      # $30.00 / 1M tokens
         "output": 0.06,     # $60.00 / 1M tokens
     },
     # GPT-3.5 Turbo
-    "azure/gpt-3.5-turbo": {
+    "openai/gpt-3.5-turbo": {
         "input": 0.0005,    # $0.50 / 1M tokens
         "output": 0.0015,   # $1.50 / 1M tokens
     },
     # Embeddings
-    "azure/text-embedding-3-small": {
+    "openai/text-embedding-3-small": {
         "input": 0.00002,   # $0.02 / 1M tokens
         "output": 0.0,
     },
-    "azure/text-embedding-3-large": {
+    "openai/text-embedding-3-large": {
         "input": 0.00013,   # $0.13 / 1M tokens
         "output": 0.0,
     },
-    "azure/text-embedding-ada-002": {
+    "openai/text-embedding-ada-002": {
         "input": 0.0001,    # $0.10 / 1M tokens
         "output": 0.0,
     },

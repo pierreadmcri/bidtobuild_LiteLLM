@@ -9,25 +9,21 @@ Créez un fichier `.env` à la racine du projet avec les variables suivantes :
 ### Obligatoires
 
 ```bash
-# Configuration Azure OpenAI
-AZURE_API_KEY="votre_cle_api"
-AZURE_API_BASE="https://votre-instance.openai.azure.com"
-AZURE_API_VERSION="2024-02-01"
+# Configuration OpenAI
+OPENAI_API_KEY="votre_cle_api"
+OPENAI_API_BASE="https://llmproxy.ai.orange"
 ```
 
 ### Optionnelles
 
 ```bash
 # Modèles utilisés (par défaut)
-MODEL_NAME="azure/gpt-4.1-mini"                     # Modèle de génération
-EMBEDDING_MODEL_NAME="azure/text-embedding-3-small" # Modèle d'embeddings
+MODEL_NAME="openai/gpt-4.1-mini"                     # Modèle de génération
+EMBEDDING_MODEL_NAME="openai/text-embedding-3-small" # Modèle d'embeddings
 
 # Limites de sécurité
 MAX_FILE_SIZE_BYTES=52428800                        # Taille max fichier (50 MB)
 MAX_INPUT_TOKENS=100000                             # Limite tokens en entrée
-
-# Logging
-LITELLM_LOG="ERROR"                                 # Niveau de log : DEBUG, INFO, WARNING, ERROR
 ```
 
 ## ⚙️ Paramètres de Performance
@@ -57,8 +53,8 @@ RATE_LIMIT_DELAY = 0.1       # Délai entre requêtes (secondes)
 ```
 
 **Recommandations** :
-- **Azure Tier Standard** : `NB_WORKERS=4`, `RATE_LIMIT_DELAY=0.1`
-- **Azure Tier Premium** : `NB_WORKERS=8`, `RATE_LIMIT_DELAY=0.05`
+- **OpenAI Tier Standard** : `NB_WORKERS=4`, `RATE_LIMIT_DELAY=0.1`
+- **OpenAI Tier Premium** : `NB_WORKERS=8`, `RATE_LIMIT_DELAY=0.05`
 - **En cas de rate limit** : Réduire `NB_WORKERS` ou augmenter `RATE_LIMIT_DELAY`
 
 ## 🎯 Paramètres RAG (rag_analysis.py)
@@ -84,7 +80,7 @@ Configurables via l'interface Streamlit (sidebar) :
 |-------------------|----------------|---------|
 | **Documents techniques** (specs, code) | 400-500 | 80-100 |
 | **Documents financiers** (budgets, contrats) | 600-800 | 120-150 |
-| **Documents mixtes** (RBO, PTC) | 500-700 | 100-150 |
+| **Documents mixtes** (RPO, PTC) | 500-700 | 100-150 |
 | **Documents longs** (> 50 pages) | 800-1000 | 150-200 |
 
 ### Retrieval
@@ -167,7 +163,6 @@ ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md"}
 
 ```bash
 # .env
-LITELLM_LOG="DEBUG"
 MAX_FILE_SIZE_BYTES=10485760  # 10 MB
 NB_WORKERS=2
 ```
@@ -176,7 +171,6 @@ NB_WORKERS=2
 
 ```bash
 # .env
-LITELLM_LOG="ERROR"
 MAX_FILE_SIZE_BYTES=52428800  # 50 MB
 NB_WORKERS=4
 ```
@@ -185,7 +179,6 @@ NB_WORKERS=4
 
 ```bash
 # .env
-LITELLM_LOG="WARNING"
 NB_WORKERS=8
 BATCH_SIZE=15
 RATE_LIMIT_DELAY=0.05
