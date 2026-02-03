@@ -195,6 +195,11 @@ def safe_completion(*args, **kwargs):
     if 'api_base' not in kwargs:
         kwargs['api_base'] = config.OPENAI_API_BASE
 
+    # Préserver le préfixe openai/ pour les proxies qui l'exigent
+    model = kwargs.get("model")
+    if model and model.startswith("openai/") and "custom_llm_provider" not in kwargs:
+        kwargs["custom_llm_provider"] = "openai"
+
     try:
         response = completion(*args, **kwargs)
         logger.info(f"Completion réussie avec le modèle {kwargs.get('model', 'unknown')}")
