@@ -25,6 +25,10 @@ REQUIRED_ENV_VARS = ["OPENAI_API_KEY", "OPENAI_API_BASE"]
 # Valeurs possibles: DEBUG, INFO, WARNING, ERROR
 LITELLM_LOG_LEVEL = os.getenv("LITELLM_LOG", "ERROR")  # Par défaut ERROR en production
 
+# Configuration des timeouts et retry pour LiteLLM
+LITELLM_TIMEOUT = int(os.getenv("LITELLM_TIMEOUT", "600"))  # 10 minutes
+LITELLM_NUM_RETRIES = int(os.getenv("LITELLM_NUM_RETRIES", "2"))
+
 # ==========================================
 # INITIALISATION LITELLM (GESTION DES CLÉS API)
 # ==========================================
@@ -63,8 +67,8 @@ def configure_litellm():
         os.environ["OPENAI_API_KEY"] = openai_api_key
 
     # Configuration des timeouts et retry
-    litellm.request_timeout = int(os.getenv("LITELLM_TIMEOUT", "600"))  # 10 minutes
-    litellm.num_retries = int(os.getenv("LITELLM_NUM_RETRIES", "2"))
+    litellm.request_timeout = LITELLM_TIMEOUT
+    litellm.num_retries = LITELLM_NUM_RETRIES
 
     return True
 
