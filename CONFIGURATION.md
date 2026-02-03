@@ -9,18 +9,17 @@ Créez un fichier `.env` à la racine du projet avec les variables suivantes :
 ### Obligatoires
 
 ```bash
-# Configuration Azure OpenAI
-AZURE_API_KEY="votre_cle_api"
-AZURE_API_BASE="https://votre-instance.openai.azure.com"
-AZURE_API_VERSION="2024-02-01"
+# Configuration OpenAI
+OPENAI_API_KEY="votre_cle_api"
+OPENAI_API_BASE="https://llmproxy.ai.orange"
 ```
 
 ### Optionnelles
 
 ```bash
 # Modèles utilisés (par défaut)
-MODEL_NAME="azure/gpt-4.1-mini"                     # Modèle de génération
-EMBEDDING_MODEL_NAME="azure/text-embedding-3-small" # Modèle d'embeddings
+MODEL_NAME="openai/gpt-4.1-mini"                     # Modèle de génération
+EMBEDDING_MODEL_NAME="openai/text-embedding-3-small" # Modèle d'embeddings
 
 # Limites de sécurité
 MAX_FILE_SIZE_BYTES=52428800                        # Taille max fichier (50 MB)
@@ -57,8 +56,8 @@ RATE_LIMIT_DELAY = 0.1       # Délai entre requêtes (secondes)
 ```
 
 **Recommandations** :
-- **Azure Tier Standard** : `NB_WORKERS=4`, `RATE_LIMIT_DELAY=0.1`
-- **Azure Tier Premium** : `NB_WORKERS=8`, `RATE_LIMIT_DELAY=0.05`
+- **OpenAI Tier Standard** : `NB_WORKERS=4`, `RATE_LIMIT_DELAY=0.1`
+- **OpenAI Tier Premium** : `NB_WORKERS=8`, `RATE_LIMIT_DELAY=0.05`
 - **En cas de rate limit** : Réduire `NB_WORKERS` ou augmenter `RATE_LIMIT_DELAY`
 
 ## 🎯 Paramètres RAG (rag_analysis.py)

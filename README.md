@@ -2,7 +2,7 @@
 
 Une application **Streamlit** intelligente qui automatise l'analyse et la synthèse de documents de construction (BCO, RPO, PTC, BDC).
 
-L'outil scanne un répertoire local, identifie les fichiers pertinents grâce à des motifs (Regex), sélectionne automatiquement la version la plus récente en cas de doublon, et génère une synthèse structurée via un LLM (Azure OpenAI / GPT-4) grâce à **LiteLLM**.
+L'outil scanne un répertoire local, identifie les fichiers pertinents grâce à des motifs (Regex), sélectionne automatiquement la version la plus récente en cas de doublon, et génère une synthèse structurée via un LLM (OpenAI / GPT-4) grâce à **LiteLLM**.
 
 ![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
 ![Streamlit](https://img.shields.io/badge/Streamlit-App-red.svg)
@@ -20,7 +20,7 @@ L'outil scanne un répertoire local, identifie les fichiers pertinents grâce à
 - **📅 Gestion des Versions :** En cas de fichiers multiples pour un même type, seule la version la plus récente (date de modification) est conservée.
 - **📄 Support Multi-formats :** Lecture native des fichiers `.pdf`, `.docx` et `.txt`.
 - **💰 Estimation des Tokens :** Calcul précis du coût en tokens via `litellm.token_counter`.
-- **🧠 Synthèse IA :** Génération d'un résumé financier et technique via Azure OpenAI.
+- **🧠 Synthèse IA :** Génération d'un résumé financier et technique via OpenAI.
 
 ### Version RAG (rag_analysis.py)
 - **✂️ Smart Chunking :** Découpe intelligente des documents avec overlap pour préserver le contexte.
@@ -40,7 +40,7 @@ L'outil scanne un répertoire local, identifie les fichiers pertinents grâce à
 ## 🛠️ Prérequis technique
 
 - **Python 3.11** (Recommandé)
-- Accès à une clé API (Azure OpenAI, OpenAI, etc.)
+- Accès à une clé API OpenAI
 - Un dossier (au même niveau que le script) contenant les fichiers a scanner 
 
 ## 📦 Installation
@@ -59,13 +59,13 @@ L'outil scanne un répertoire local, identifie les fichiers pertinents grâce à
 - Installer les lib **pip install -r requirements.txt**
 - Créer un fichier **`.env`** à la racine avec au minimum votre clé API et, si besoin, le modèle voulu :
   ```bash
-  # Exemple Azure OpenAI
-  AZURE_API_KEY="votre_cle"
-  AZURE_API_BASE="https://votre-instance.openai.azure.com"
-  AZURE_API_VERSION="2024-02-01"
+  # Configuration OpenAI
+  OPENAI_API_KEY="votre_cle"
+  OPENAI_API_BASE="https://llmproxy.ai.orange"
 
   # (Optionnel) Forcer un modèle spécifique
-  MODEL_NAME="azure/gpt-4.1-mini"
+  MODEL_NAME="openai/gpt-4.1-mini"
+  EMBEDDING_MODEL_NAME="openai/text-embedding-3-small"
   ```
 - Lancer l'app : **streamlit run app.py**
 

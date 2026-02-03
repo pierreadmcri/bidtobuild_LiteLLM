@@ -8,14 +8,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ==========================================
-# CONFIGURATION AZURE / LLM
+# CONFIGURATION OPENAI / LLM
 # ==========================================
 
-MODEL_NAME = os.getenv("MODEL_NAME", "azure/gpt-4.1-mini")
-EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "azure/text-embedding-3-small")
+MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-4.1-mini")
+EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "openai/text-embedding-3-small")
 
-# Variables Azure obligatoires
-REQUIRED_ENV_VARS = ["AZURE_API_KEY", "AZURE_API_BASE", "AZURE_API_VERSION"]
+# Variables OpenAI obligatoires
+# Note: API_VERSION n'est pas nécessaire pour OpenAI (uniquement pour Azure)
+REQUIRED_ENV_VARS = ["OPENAI_API_KEY", "OPENAI_API_BASE"]
 
 # Configuration du logging LiteLLM
 # Valeurs possibles: DEBUG, INFO, WARNING, ERROR
@@ -32,33 +33,26 @@ def configure_litellm():
 
     Avantages :
     - Configuration unique au lieu de passer les clés à chaque appel
-    - Support multi-provider (Azure, OpenAI, Anthropic, etc.)
+    - Support multi-provider (OpenAI, Azure, Anthropic, etc.)
     - Gestion automatique des retry et timeout
     - Logging centralisé
     """
     # Configuration du logging
     litellm.set_verbose = (LITELLM_LOG_LEVEL == "DEBUG")
 
-    # Configuration Azure OpenAI
-    azure_api_key = os.getenv("AZURE_API_KEY")
-    azure_api_base = os.getenv("AZURE_API_BASE")
-    azure_api_version = os.getenv("AZURE_API_VERSION")
-
-    if azure_api_key and azure_api_base and azure_api_version:
-        # Configuration globale pour Azure
-        os.environ["AZURE_API_KEY"] = azure_api_key
-        os.environ["AZURE_API_BASE"] = azure_api_base
-        os.environ["AZURE_API_VERSION"] = azure_api_version
-
-        # Configuration LiteLLM
-        litellm.api_key = azure_api_key
-        litellm.api_base = azure_api_base
-        litellm.api_version = azure_api_version
-
-    # Support OpenAI (si disponible)
+    # Configuration OpenAI (avec support proxy)
     openai_api_key = os.getenv("OPENAI_API_KEY")
+    openai_api_base = os.getenv("OPENAI_API_BASE")
+
     if openai_api_key:
+        # Configuration globale pour OpenAI
         os.environ["OPENAI_API_KEY"] = openai_api_key
+        litellm.api_key = openai_api_key
+
+        # Configuration du proxy/base URL si spécifié (ex: https://llmproxy.ai.orange)
+        if openai_api_base:
+            os.environ["OPENAI_API_BASE"] = openai_api_base
+            litellm.api_base = openai_api_base
 
     # Configuration des timeouts et retry
     litellm.request_timeout = int(os.getenv("LITELLM_TIMEOUT", "600"))  # 10 minutes
@@ -164,52 +158,52 @@ EXCEL_PRIORITY_SHEETS = os.getenv("EXCEL_PRIORITY_SHEETS", "Build,Run")
 MAX_EXCEL_ROWS = int(os.getenv("MAX_EXCEL_ROWS", 1000))
 
 # ==========================================
-# TARIFICATION AZURE OPENAI (USD)
+# TARIFICATION OPENAI (USD)
 # ==========================================
 
 # Tarifs par 1000 tokens (mise à jour: Janvier 2025)
-# Source: https://azure.microsoft.com/pricing/details/cognitive-services/openai-service/
+# Source: https://openai.com/api/pricing/
 
 PRICING = {
     # GPT-4o
-    "azure/gpt-4o": {
+    "openai/gpt-4o": {
         "input": 0.0025,    # $2.50 / 1M tokens
         "output": 0.01,     # $10.00 / 1M tokens
     },
-    "azure/gpt-4o-mini": {
+    "openai/gpt-4o-mini": {
         "input": 0.00015,   # $0.15 / 1M tokens
         "output": 0.0006,   # $0.60 / 1M tokens
     },
     # GPT-4.1 Mini (modèle déployé)
-    "azure/gpt-4.1-mini": {
+    "openai/gpt-4.1-mini": {
         "input": 0.00015,   # $0.15 / 1M tokens
         "output": 0.0006,   # $0.60 / 1M tokens
     },
     # GPT-4 Turbo
-    "azure/gpt-4-turbo": {
+    "openai/gpt-4-turbo": {
         "input": 0.01,      # $10.00 / 1M tokens
         "output": 0.03,     # $30.00 / 1M tokens
     },
     # GPT-4 (anciennes versions)
-    "azure/gpt-4": {
+    "openai/gpt-4": {
         "input": 0.03,      # $30.00 / 1M tokens
         "output": 0.06,     # $60.00 / 1M tokens
     },
     # GPT-3.5 Turbo
-    "azure/gpt-3.5-turbo": {
+    "openai/gpt-3.5-turbo": {
         "input": 0.0005,    # $0.50 / 1M tokens
         "output": 0.0015,   # $1.50 / 1M tokens
     },
     # Embeddings
-    "azure/text-embedding-3-small": {
+    "openai/text-embedding-3-small": {
         "input": 0.00002,   # $0.02 / 1M tokens
         "output": 0.0,
     },
-    "azure/text-embedding-3-large": {
+    "openai/text-embedding-3-large": {
         "input": 0.00013,   # $0.13 / 1M tokens
         "output": 0.0,
     },
-    "azure/text-embedding-ada-002": {
+    "openai/text-embedding-ada-002": {
         "input": 0.0001,    # $0.10 / 1M tokens
         "output": 0.0,
     },
