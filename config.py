@@ -46,8 +46,9 @@ def configure_litellm():
     - Ces paramètres sont passés explicitement dans chaque appel
     - custom_llm_provider="openai" force la préservation du préfixe "openai/"
     """
-    # Configuration du logging
-    litellm.set_verbose = (LITELLM_LOG_LEVEL == "DEBUG")
+    # Configuration du logging (via variable d'environnement)
+    # LiteLLM recommande d'utiliser os.environ['LITELLM_LOG'] au lieu de set_verbose
+    os.environ['LITELLM_LOG'] = LITELLM_LOG_LEVEL
 
     # Configuration OpenAI (via variables d'environnement uniquement)
     openai_api_key = os.getenv("OPENAI_API_KEY")
