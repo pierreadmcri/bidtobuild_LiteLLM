@@ -184,16 +184,14 @@ def safe_completion(*args, **kwargs):
     """
     Wrapper sécurisé pour litellm.completion avec retry et rate limiting
 
-    Note: Ajoute automatiquement api_base et custom_llm_provider pour le proxy OpenAI
+    Note: Ajoute automatiquement api_base pour le proxy OpenAI
+    Le nom du modèle avec préfixe "openai/" sera envoyé tel quel au proxy
     """
     rate_limiter.wait()
 
-    # Ajouter api_base et custom_llm_provider si non spécifiés
-    # custom_llm_provider="openai" force LiteLLM à préserver le préfixe "openai/" du modèle
+    # Ajouter api_base si non spécifié
     if 'api_base' not in kwargs:
         kwargs['api_base'] = config.OPENAI_API_BASE
-    if 'custom_llm_provider' not in kwargs:
-        kwargs['custom_llm_provider'] = "openai"
 
     try:
         response = completion(*args, **kwargs)
@@ -230,34 +228,25 @@ def safe_embedding(texts: List[str], model: str = None, **kwargs):
         texts = [texts]
 
     for text in texts:
-        try:
-            # Utiliser token_counter pour une estimation précise
-            # Passer custom_llm_provider pour éviter que LiteLLM ne modifie le nom du modèle
-            token_count = token_counter(
-                model=model,
-                text=text,
-                custom_llm_provider="openai"
-            )
-            # Limite API: ~8191 tokens pour text-embedding-3-small
-            if token_count > 8000:
-                # Troncature approximative (4 chars ≈ 1 token)
-                safe_text = text[:32000]
-            else:
-                safe_text = text
-            safe_texts.append(safe_text)
-        except Exception as e:
-            # Fallback sur troncature simple si token_counter échoue
-            logger.debug(f"token_counter a échoué, utilisation d'une estimation simple: {e}")
-            safe_texts.append(text[:32000])
+        # Utiliser une estimation simple de tokens (1 token ≈ 4 chars)
+        # On évite token_counter qui n'accepte pas custom_llm_provider
+        token_count = len(text) // 4
+
+        # Limite API: ~8191 tokens pour text-embedding-3-small
+        if token_count > 8000:
+            # Troncature approximative (4 chars ≈ 1 token)
+            safe_text = text[:32000]
+        else:
+            safe_text = text
+        safe_texts.append(safe_text)
 
     try:
-        # Forcer le provider OpenAI pour préserver le préfixe "openai/" dans le nom du modèle
-        # Sans custom_llm_provider, LiteLLM enlève automatiquement le préfixe
+        # Appel à l'API via LiteLLM avec api_base uniquement
+        # Le nom du modèle "openai/text-embedding-3-small" sera envoyé tel quel
         response = embedding(
             model=model,
             input=safe_texts,
             api_base=config.OPENAI_API_BASE,
-            custom_llm_provider="openai",
             **kwargs
         )
 
@@ -507,24 +496,21 @@ def extract_text_from_excel(file_path: Union[str, Path], max_sheets: int = None,
 
 def estimate_tokens(text: str, model: str = None) -> int:
     """
-    Estimation précise du nombre de tokens via litellm.token_counter
+    Estimation du nombre de tokens (approximation simple)
 
     Args:
         text: Texte à analyser
-        model: Nom du modèle (optionnel)
+        model: Nom du modèle (optionnel, non utilisé pour l'approximation)
 
     Returns:
-        Nombre de tokens
-    """
-    model = model or config.MODEL_NAME
+        Nombre de tokens (estimation)
 
-    try:
-        # Ajouter custom_llm_provider pour préserver le préfixe "openai/"
-        return token_counter(model=model, text=text, custom_llm_provider="openai")
-    except Exception as e:
-        logger.warning(f"Erreur token_counter, utilisation d'une approximation: {e}")
-        # Fallback sur approximation simple
-        return max(len(text) // 4, 1)
+    Note:
+        Utilise une approximation simple (1 token ≈ 4 caractères) pour éviter les
+        problèmes avec token_counter qui ne supporte pas les proxies custom
+    """
+    # Approximation simple et fiable : 1 token ≈ 4 caractères
+    return max(len(text) // 4, 1)
 
 # ==========================================
 # CALCUL DES COÛTS
