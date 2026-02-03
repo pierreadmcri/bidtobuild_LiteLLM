@@ -184,13 +184,16 @@ def safe_completion(*args, **kwargs):
     """
     Wrapper sécurisé pour litellm.completion avec retry et rate limiting
 
-    Note: Ajoute automatiquement api_base pour le proxy OpenAI
+    Note: Ajoute automatiquement api_base et custom_llm_provider pour le proxy OpenAI
     """
     rate_limiter.wait()
 
-    # Ajouter api_base si non spécifié (pour éviter que LiteLLM n'enlève le préfixe "openai/")
+    # Ajouter api_base et custom_llm_provider si non spécifiés
+    # custom_llm_provider="openai" force LiteLLM à préserver le préfixe "openai/" du modèle
     if 'api_base' not in kwargs:
         kwargs['api_base'] = config.OPENAI_API_BASE
+    if 'custom_llm_provider' not in kwargs:
+        kwargs['custom_llm_provider'] = "openai"
 
     try:
         response = completion(*args, **kwargs)
@@ -242,11 +245,13 @@ def safe_embedding(texts: List[str], model: str = None, **kwargs):
             safe_texts.append(text[:32000])
 
     try:
-        # Passer api_base explicitement pour éviter que LiteLLM n'enlève le préfixe "openai/"
+        # Forcer le provider OpenAI pour préserver le préfixe "openai/" dans le nom du modèle
+        # Sans custom_llm_provider, LiteLLM enlève automatiquement le préfixe
         response = embedding(
             model=model,
             input=safe_texts,
             api_base=config.OPENAI_API_BASE,
+            custom_llm_provider="openai",
             **kwargs
         )
 
