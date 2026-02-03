@@ -50,6 +50,10 @@ def configure_litellm():
     # LiteLLM recommande d'utiliser os.environ['LITELLM_LOG'] au lieu de set_verbose
     os.environ['LITELLM_LOG'] = LITELLM_LOG_LEVEL
 
+    # Activer le mode debug pour diagnostiquer les problèmes
+    if LITELLM_LOG_LEVEL == "DEBUG":
+        litellm._turn_on_debug()
+
     # Configuration OpenAI (via variables d'environnement uniquement)
     openai_api_key = os.getenv("OPENAI_API_KEY")
 
