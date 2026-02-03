@@ -17,7 +17,8 @@ from utils import (
     load_prompt,
     ValidationError,
     FileTooLargeError,
-    logger
+    logger,
+    extract_text_from_excel
 )
 
 # Imports pour lire les vrais fichiers
@@ -28,10 +29,7 @@ from docx import Document
 # 0. CONFIGURATION
 # ==========================================
 
-# Configuration du niveau de log LiteLLM
-os.environ['LITELLM_LOG'] = config.LITELLM_LOG_LEVEL
-
-# Configuration Azure
+# Vérification des variables d'environnement requises
 for var in config.REQUIRED_ENV_VARS:
     value = os.getenv(var)
     if not value:
@@ -83,6 +81,9 @@ def read_file_content(filepath):
                 content += page_text + "\n"
             if not content.strip():
                 return "[Alerte : Aucun texte lisible extrait du PDF. Le document est peut-être scanné ou protégé.]"
+        elif ext in [".xlsx", ".xlsm"]:
+            logger.info(f"Extraction Excel : {filepath}")
+            content = extract_text_from_excel(filepath)
         elif ext == ".docx":
             doc = Document(filepath)
             for para in doc.paragraphs:
@@ -192,7 +193,7 @@ def truncate_text_by_tokens(text, max_tokens):
 def process_files(selected_folder):
     # 1. Patterns mis à jour
     search_patterns = {
-        "RBO": r".*RBO.*",
+        "RPO": r".*RPO.*",
         "PTC": r".*PTC.*",
         "BCO": r".*BCO.*",
         "BDC": r".*BDC.*"
@@ -234,7 +235,7 @@ def process_files(selected_folder):
 # 3. INTERFACE
 # ==========================================
 
-st.title("📂 Scanner Automatique RBO/PTC/BCO")
+st.title("📂 Scanner Automatique RPO/PTC/BCO")
 
 # Zone de sélection du dossier
 default_path = os.path.join(os.getcwd(), "documents_types")
@@ -282,7 +283,7 @@ if start_analysis:
             st.error(error)
         elif not final_docs:
             progress_bar.progress(100, text="Fini.")
-            st.warning("Aucun fichier correspondant aux critères (RBO, PTC, BCO, BDC) n'a été trouvé.")
+            st.warning("Aucun fichier correspondant aux critères (RPO, PTC, BCO, BDC) n'a été trouvé.")
         else:
             # Affichage des logs de sélection
             with st.expander("Voir le détail de la sélection des fichiers", expanded=True):
@@ -393,10 +394,7 @@ if start_analysis:
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": full_context}
-                    ],
-                    api_key=os.getenv("AZURE_API_KEY"),
-                    api_base=os.getenv("AZURE_API_BASE"),
-                    api_version=os.getenv("AZURE_API_VERSION")
+                    ]
                 )
 
                 ai_reply = response.choices[0].message.content
