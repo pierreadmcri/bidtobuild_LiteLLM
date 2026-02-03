@@ -232,7 +232,12 @@ def safe_embedding(texts: List[str], model: str = None, **kwargs):
     for text in texts:
         try:
             # Utiliser token_counter pour une estimation précise
-            token_count = token_counter(model=model, text=text)
+            # Passer custom_llm_provider pour éviter que LiteLLM ne modifie le nom du modèle
+            token_count = token_counter(
+                model=model,
+                text=text,
+                custom_llm_provider="openai"
+            )
             # Limite API: ~8191 tokens pour text-embedding-3-small
             if token_count > 8000:
                 # Troncature approximative (4 chars ≈ 1 token)
@@ -240,8 +245,9 @@ def safe_embedding(texts: List[str], model: str = None, **kwargs):
             else:
                 safe_text = text
             safe_texts.append(safe_text)
-        except Exception:
-            # Fallback sur troncature simple
+        except Exception as e:
+            # Fallback sur troncature simple si token_counter échoue
+            logger.debug(f"token_counter a échoué, utilisation d'une estimation simple: {e}")
             safe_texts.append(text[:32000])
 
     try:
@@ -513,7 +519,8 @@ def estimate_tokens(text: str, model: str = None) -> int:
     model = model or config.MODEL_NAME
 
     try:
-        return token_counter(model=model, text=text)
+        # Ajouter custom_llm_provider pour préserver le préfixe "openai/"
+        return token_counter(model=model, text=text, custom_llm_provider="openai")
     except Exception as e:
         logger.warning(f"Erreur token_counter, utilisation d'une approximation: {e}")
         # Fallback sur approximation simple

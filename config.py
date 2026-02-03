@@ -35,30 +35,27 @@ def configure_litellm():
     Cette fonction doit être appelée au démarrage de l'application.
 
     Avantages :
-    - Configuration unique au lieu de passer les clés à chaque appel
+    - Configuration via variables d'environnement
     - Support multi-provider (OpenAI, Azure, Anthropic, etc.)
     - Gestion automatique des retry et timeout
     - Logging centralisé
 
-    Note importante:
-    - Pour les proxies OpenAI, on configure seulement la clé globalement
-    - L'api_base doit être passé en paramètre de chaque appel pour éviter
-      que LiteLLM n'enlève le préfixe "openai/" des modèles
+    Note importante pour les proxies OpenAI:
+    - La clé est configurée dans os.environ["OPENAI_API_KEY"] seulement
+    - On ne configure PAS litellm.api_key ni litellm.api_base globalement
+    - Ces paramètres sont passés explicitement dans chaque appel
+    - custom_llm_provider="openai" force la préservation du préfixe "openai/"
     """
     # Configuration du logging
     litellm.set_verbose = (LITELLM_LOG_LEVEL == "DEBUG")
 
-    # Configuration OpenAI (avec support proxy)
+    # Configuration OpenAI (via variables d'environnement uniquement)
     openai_api_key = os.getenv("OPENAI_API_KEY")
 
     if openai_api_key:
-        # Configuration globale pour OpenAI (clé seulement)
+        # Configuration UNIQUEMENT dans les variables d'environnement
+        # Ne PAS utiliser litellm.api_key car cela interfère avec custom_llm_provider
         os.environ["OPENAI_API_KEY"] = openai_api_key
-        litellm.api_key = openai_api_key
-
-        # NOTE: On ne configure PAS litellm.api_base globalement
-        # car cela causerait LiteLLM à enlever le préfixe "openai/" des modèles
-        # L'api_base sera passé en paramètre de chaque appel
 
     # Configuration des timeouts et retry
     litellm.request_timeout = int(os.getenv("LITELLM_TIMEOUT", "600"))  # 10 minutes
