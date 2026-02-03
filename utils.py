@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from functools import wraps
 from typing import Callable, Any, List, Union
-from litellm import completion, embedding
+from openai import OpenAI
 from PIL import Image
 import pytesseract
 import config
@@ -176,37 +176,49 @@ class RateLimiter:
 rate_limiter = RateLimiter()
 
 # ==========================================
+# CLIENT OPENAI
+# ==========================================
+
+# Créer le client OpenAI avec la configuration du proxy
+client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url=config.OPENAI_API_BASE
+)
+
+# ==========================================
 # WRAPPERS API avec RETRY & RATE LIMITING
 # ==========================================
 
 @retry_with_exponential_backoff()
-def safe_completion(*args, **kwargs):
+def safe_completion(model: str = None, messages: List[dict] = None, **kwargs):
     """
-    Wrapper sécurisé pour litellm.completion avec retry et rate limiting
+    Wrapper sécurisé pour les appels de completion avec retry et rate limiting
 
-    Suit le pattern simple de la documentation LiteLLM.
+    Utilise le client OpenAI natif avec la syntaxe client.chat.completions.create()
 
     Args:
         model: Nom du modèle (ex: "openai/gpt-4.1-mini")
         messages: Liste des messages pour le chat
-        **kwargs: Arguments supplémentaires pour litellm.completion
+        **kwargs: Arguments supplémentaires (temperature, stream, etc.)
 
     Returns:
-        Réponse de l'API (objet litellm.ModelResponse)
+        Réponse de l'API
 
     Raises:
         Exception: Si tous les retries échouent
     """
     rate_limiter.wait()
 
-    # Ajouter api_base si non spécifié
-    if 'api_base' not in kwargs:
-        kwargs['api_base'] = config.OPENAI_API_BASE
+    model = model or config.MODEL_NAME
 
     try:
-        # Appel simple comme dans la doc LiteLLM
-        response = completion(*args, **kwargs)
-        logger.info(f"Completion réussie avec le modèle {kwargs.get('model', 'unknown')}")
+        # Utilisation de la syntaxe client OpenAI native
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            **kwargs
+        )
+        logger.info(f"Completion réussie avec le modèle {model}")
         return response
 
     except Exception as e:
@@ -216,14 +228,14 @@ def safe_completion(*args, **kwargs):
 @retry_with_exponential_backoff()
 def safe_embedding(texts: List[str], model: str = None, **kwargs):
     """
-    Wrapper sécurisé pour litellm.embedding avec retry et rate limiting
+    Wrapper sécurisé pour les embeddings avec retry et rate limiting
 
-    Suit le pattern simple de la documentation LiteLLM.
+    Utilise le client OpenAI natif avec la syntaxe client.embeddings.create()
 
     Args:
         texts: Liste de textes à embedder (ou texte unique)
         model: Nom du modèle d'embedding (ex: "openai/text-embedding-3-small")
-        **kwargs: Arguments supplémentaires pour litellm.embedding
+        **kwargs: Arguments supplémentaires
 
     Returns:
         Liste d'embeddings
@@ -252,21 +264,18 @@ def safe_embedding(texts: List[str], model: str = None, **kwargs):
             safe_text = text
         safe_texts.append(safe_text)
 
-    # Ajouter api_base si non spécifié
-    if 'api_base' not in kwargs:
-        kwargs['api_base'] = config.OPENAI_API_BASE
-
     try:
-        # Appel simple comme dans la doc LiteLLM
-        response = embedding(model=model, input=safe_texts, **kwargs)
+        # Utilisation de la syntaxe client OpenAI native
+        response = client.embeddings.create(
+            model=model,
+            input=safe_texts,
+            **kwargs
+        )
         logger.info(f"Embedding réussi pour {len(texts)} texte(s) avec le modèle {model}")
 
         # Extraire les embeddings de la réponse
-        if hasattr(response, 'data'):
-            embeddings = [item['embedding'] for item in response.data]
-            return embeddings
-        else:
-            raise ValueError(f"Format de réponse inattendu: {response}")
+        embeddings = [item.embedding for item in response.data]
+        return embeddings
 
     except Exception as e:
         logger.error(f"Erreur lors de l'appel embedding: {e}")
