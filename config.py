@@ -2,7 +2,6 @@
 Configuration centralisée pour l'application d'analyse de documents
 """
 import os
-import litellm
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -18,62 +17,7 @@ EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "openai/text-embedding-
 OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "https://llmproxy.ai.orange")
 
 # Variables OpenAI obligatoires
-# Note: API_VERSION n'est pas nécessaire pour OpenAI (uniquement pour Azure)
 REQUIRED_ENV_VARS = ["OPENAI_API_KEY", "OPENAI_API_BASE"]
-
-# Configuration du logging LiteLLM
-# Valeurs possibles: DEBUG, INFO, WARNING, ERROR
-LITELLM_LOG_LEVEL = os.getenv("LITELLM_LOG", "ERROR")  # Par défaut ERROR en production
-
-# Configuration des timeouts et retry pour LiteLLM
-LITELLM_TIMEOUT = int(os.getenv("LITELLM_TIMEOUT", "600"))  # 10 minutes
-LITELLM_NUM_RETRIES = int(os.getenv("LITELLM_NUM_RETRIES", "2"))
-
-# ==========================================
-# INITIALISATION LITELLM (GESTION DES CLÉS API)
-# ==========================================
-
-def configure_litellm():
-    """
-    Configure LiteLLM avec les clés API de manière centralisée.
-    Cette fonction doit être appelée au démarrage de l'application.
-
-    Avantages :
-    - Configuration via variables d'environnement
-    - Support multi-provider (OpenAI, Azure, Anthropic, etc.)
-    - Gestion automatique des retry et timeout
-    - Logging centralisé
-
-    Note importante pour les proxies OpenAI:
-    - La clé est configurée dans os.environ["OPENAI_API_KEY"] seulement
-    - On ne configure PAS litellm.api_key ni litellm.api_base globalement
-    - Ces paramètres sont passés explicitement dans chaque appel
-    - custom_llm_provider="openai" force la préservation du préfixe "openai/"
-    """
-    # Configuration du logging (via variable d'environnement)
-    # LiteLLM recommande d'utiliser os.environ['LITELLM_LOG'] au lieu de set_verbose
-    os.environ['LITELLM_LOG'] = LITELLM_LOG_LEVEL
-
-    # Activer le mode debug pour diagnostiquer les problèmes
-    if LITELLM_LOG_LEVEL == "DEBUG":
-        litellm._turn_on_debug()
-
-    # Configuration OpenAI (via variables d'environnement uniquement)
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-
-    if openai_api_key:
-        # Configuration UNIQUEMENT dans les variables d'environnement
-        # Ne PAS utiliser litellm.api_key car cela interfère avec custom_llm_provider
-        os.environ["OPENAI_API_KEY"] = openai_api_key
-
-    # Configuration des timeouts et retry
-    litellm.request_timeout = LITELLM_TIMEOUT
-    litellm.num_retries = LITELLM_NUM_RETRIES
-
-    return True
-
-# Initialiser LiteLLM au chargement du module
-_litellm_configured = configure_litellm()
 
 # ==========================================
 # LIMITES & SÉCURITÉ

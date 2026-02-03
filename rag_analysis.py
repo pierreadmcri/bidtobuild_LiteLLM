@@ -33,8 +33,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Configuration Log & Env
-os.environ['LITELLM_LOG'] = config.LITELLM_LOG_LEVEL
+# Configuration Env
 for var in config.REQUIRED_ENV_VARS:
     value = os.getenv(var)
     if not value:

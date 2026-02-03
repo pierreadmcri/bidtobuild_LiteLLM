@@ -24,9 +24,6 @@ EMBEDDING_MODEL_NAME="openai/text-embedding-3-small" # Modèle d'embeddings
 # Limites de sécurité
 MAX_FILE_SIZE_BYTES=52428800                        # Taille max fichier (50 MB)
 MAX_INPUT_TOKENS=100000                             # Limite tokens en entrée
-
-# Logging
-LITELLM_LOG="ERROR"                                 # Niveau de log : DEBUG, INFO, WARNING, ERROR
 ```
 
 ## ⚙️ Paramètres de Performance
@@ -166,7 +163,6 @@ ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md"}
 
 ```bash
 # .env
-LITELLM_LOG="DEBUG"
 MAX_FILE_SIZE_BYTES=10485760  # 10 MB
 NB_WORKERS=2
 ```
@@ -175,7 +171,6 @@ NB_WORKERS=2
 
 ```bash
 # .env
-LITELLM_LOG="ERROR"
 MAX_FILE_SIZE_BYTES=52428800  # 50 MB
 NB_WORKERS=4
 ```
@@ -184,7 +179,6 @@ NB_WORKERS=4
 
 ```bash
 # .env
-LITELLM_LOG="WARNING"
 NB_WORKERS=8
 BATCH_SIZE=15
 RATE_LIMIT_DELAY=0.05

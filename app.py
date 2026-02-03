@@ -29,10 +29,7 @@ from docx import Document
 # 0. CONFIGURATION
 # ==========================================
 
-# Configuration du niveau de log LiteLLM
-os.environ['LITELLM_LOG'] = config.LITELLM_LOG_LEVEL
-
-# Configuration Azure
+# Vérification des variables d'environnement requises
 for var in config.REQUIRED_ENV_VARS:
     value = os.getenv(var)
     if not value:
