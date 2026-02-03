@@ -4,10 +4,12 @@ Fonctions utilitaires pour la gestion des erreurs, retry, validation et rate lim
 import os
 import time
 import logging
+import requests
+import json
 from pathlib import Path
 from functools import wraps
 from typing import Callable, Any, List, Union
-from litellm import completion, embedding, token_counter
+from litellm import completion, token_counter
 from PIL import Image
 import pytesseract
 import config
@@ -205,12 +207,16 @@ def safe_completion(*args, **kwargs):
 @retry_with_exponential_backoff()
 def safe_embedding(texts: List[str], model: str = None, **kwargs):
     """
-    Wrapper sécurisé pour litellm.embedding avec retry et rate limiting
+    Wrapper sécurisé pour les embeddings avec retry et rate limiting
+
+    Utilise des requêtes HTTP directes au proxy OpenAI pour préserver
+    le préfixe "openai/" dans le nom du modèle (contourne LiteLLM qui
+    enlève automatiquement ce préfixe).
 
     Args:
         texts: Liste de textes à embedder (ou texte unique)
-        model: Nom du modèle d'embedding
-        **kwargs: Arguments supplémentaires pour l'API
+        model: Nom du modèle d'embedding (avec préfixe openai/)
+        **kwargs: Arguments supplémentaires (ignorés)
 
     Returns:
         Liste d'embeddings
@@ -229,7 +235,6 @@ def safe_embedding(texts: List[str], model: str = None, **kwargs):
 
     for text in texts:
         # Utiliser une estimation simple de tokens (1 token ≈ 4 chars)
-        # On évite token_counter qui n'accepte pas custom_llm_provider
         token_count = len(text) // 4
 
         # Limite API: ~8191 tokens pour text-embedding-3-small
@@ -241,29 +246,35 @@ def safe_embedding(texts: List[str], model: str = None, **kwargs):
         safe_texts.append(safe_text)
 
     try:
-        # Appel à l'API via LiteLLM avec api_base uniquement
-        # Le nom du modèle "openai/text-embedding-3-small" sera envoyé tel quel
-        response = embedding(
-            model=model,
-            input=safe_texts,
-            api_base=config.OPENAI_API_BASE,
-            **kwargs
-        )
+        # Faire une requête HTTP directe au proxy pour préserver le préfixe "openai/"
+        url = f"{config.OPENAI_API_BASE}/v1/embeddings"
+        headers = {
+            "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "model": model,  # "openai/text-embedding-3-small" sera envoyé tel quel
+            "input": safe_texts
+        }
 
-        # Extraction robuste des embeddings
-        if hasattr(response, "data"):
-            embeddings = [
-                d["embedding"] if isinstance(d, dict) else d.embedding
-                for d in response.data
-            ]
-        elif isinstance(response, dict) and "data" in response:
-            embeddings = [d["embedding"] for d in response["data"]]
+        response = requests.post(url, headers=headers, json=data, timeout=config.LITELLM_TIMEOUT or 600)
+        response.raise_for_status()
+
+        result = response.json()
+
+        # Extraction des embeddings
+        if "data" in result:
+            embeddings = [item["embedding"] for item in result["data"]]
+            logger.info(f"Embedding réussi pour {len(texts)} texte(s) via requête HTTP directe")
+            return embeddings
         else:
-            raise ValueError("Format de réponse d'embedding inattendu")
+            raise ValueError(f"Format de réponse inattendu: {result}")
 
-        logger.info(f"Embedding réussi pour {len(texts)} texte(s)")
-        return embeddings
-
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Erreur HTTP lors de l'appel embedding: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            logger.error(f"Réponse du serveur: {e.response.text}")
+        raise
     except Exception as e:
         logger.error(f"Erreur lors de l'appel embedding: {e}")
         raise
