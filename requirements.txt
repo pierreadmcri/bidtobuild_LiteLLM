@@ -1,17 +1,27 @@
-streamlit
-pandas
-python-dotenv
-litellm
-pypdf
-python-docx
-tiktoken
-numpy
-Pillow>=10.0.0
+# Core dependencies
+streamlit>=1.28.0
+pandas>=2.0.0
+litellm>=1.30.0
+
+# Document processing
+pypdf>=3.17.0
+python-docx>=1.1.0
 PyMuPDF>=1.23.0
-pytesseract>=0.3.10
 openpyxl>=3.1.0
+
+# AI & ML
+tiktoken>=0.5.0
+numpy>=1.24.0
+
+# Image processing & OCR
+Pillow>=10.0.0
+pytesseract>=0.3.10
+
+# Environment & utilities
+python-dotenv>=1.0.0
+requests>=2.31.0
 
 # Tests (optionnel)
 pytest>=7.0.0
 pytest-mock>=3.10.0
-pytest-cov>=4.0.0requests>=2.31.0
+pytest-cov>=4.0.0
