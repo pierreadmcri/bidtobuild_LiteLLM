@@ -8,8 +8,9 @@ import requests
 import json
 from pathlib import Path
 from functools import wraps
-from typing import Callable, Any, List, Union
+from typing import Callable, Any, List, Union, Dict
 from litellm import completion, token_counter
+from types import SimpleNamespace
 from PIL import Image
 import pytesseract
 import config
@@ -195,10 +196,17 @@ def safe_completion(*args, **kwargs):
     if 'api_base' not in kwargs:
         kwargs['api_base'] = config.OPENAI_API_BASE
 
-    # Préserver le préfixe openai/ pour les proxies qui l'exigent
     model = kwargs.get("model")
-    if model and model.startswith("openai/") and "custom_llm_provider" not in kwargs:
-        kwargs["custom_llm_provider"] = "openai"
+    api_base = kwargs.get("api_base", config.OPENAI_API_BASE)
+
+    if model and model.startswith("openai/"):
+        try:
+            response = _direct_chat_completion(api_base=api_base, **kwargs)
+            logger.info(f"Completion réussie avec le modèle {model}")
+            return response
+        except Exception as e:
+            logger.error(f"Erreur lors de l'appel completion direct: {e}")
+            raise
 
     try:
         response = completion(*args, **kwargs)
@@ -208,6 +216,64 @@ def safe_completion(*args, **kwargs):
     except Exception as e:
         logger.error(f"Erreur lors de l'appel completion: {e}")
         raise
+
+
+def _direct_chat_completion(api_base: str, **kwargs):
+    """
+    Effectue un appel direct au proxy OpenAI pour préserver le préfixe openai/.
+    """
+    model = kwargs.get("model")
+    if not model:
+        raise ValueError("Le paramètre 'model' est requis pour la completion.")
+
+    url = f"{api_base.rstrip('/')}/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}",
+        "Content-Type": "application/json"
+    }
+
+    payload: Dict[str, Any] = {
+        "model": model,
+        "messages": kwargs.get("messages", []),
+    }
+
+    passthrough_keys = {
+        "temperature",
+        "top_p",
+        "max_tokens",
+        "presence_penalty",
+        "frequency_penalty",
+        "stop",
+        "response_format",
+        "seed"
+    }
+    for key in passthrough_keys:
+        if key in kwargs and kwargs[key] is not None:
+            payload[key] = kwargs[key]
+
+    response = requests.post(
+        url,
+        headers=headers,
+        json=payload,
+        timeout=config.LITELLM_TIMEOUT or 600
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    usage = data.get("usage", {})
+    choices = data.get("choices", [])
+    message = {}
+    if choices:
+        message = choices[0].get("message", {})
+
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=message.get("content", "")))],
+        usage=SimpleNamespace(
+            completion_tokens=usage.get("completion_tokens", 0),
+            prompt_tokens=usage.get("prompt_tokens", 0),
+            total_tokens=usage.get("total_tokens", 0)
+        )
+    )
 
 @retry_with_exponential_backoff()
 def safe_embedding(texts: List[str], model: str = None, **kwargs):
