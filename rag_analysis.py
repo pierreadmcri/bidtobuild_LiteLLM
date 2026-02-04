@@ -732,7 +732,16 @@ if run_btn:
                 # Score = 70% moyenne + 30% max (favorise les chunks pertinents sur plusieurs aspects)
                 avg_score = scores["total"] / scores["count"]
                 max_score = scores["max"]
-                final_scores[chunk_idx] = 0.7 * avg_score + 0.3 * max_score
+                base_score = 0.7 * avg_score + 0.3 * max_score
+
+                # Boost pour les chunks Excel (Build/Run contiennent les infos financières)
+                chunk_name = chunks[chunk_idx]['doc_name'].lower()
+                if chunk_name.endswith('.xlsx') or chunk_name.endswith('.xlsm'):
+                    # Appliquer un boost de 40% pour prioriser les données Excel
+                    final_scores[chunk_idx] = base_score * 1.4
+                    logger.debug(f"Boost Excel appliqué au chunk {chunk_idx} ({chunks[chunk_idx]['doc_name']}): {base_score:.3f} → {base_score * 1.4:.3f}")
+                else:
+                    final_scores[chunk_idx] = base_score
 
             # Sélection des candidats au-dessus du seuil
             candidate_indices = np.where(final_scores >= sim_threshold)[0]
