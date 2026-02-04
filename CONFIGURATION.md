@@ -229,10 +229,10 @@ Les logs sont écrits dans la sortie standard avec le format :
 
 ```bash
 # Voir uniquement les erreurs
-streamlit run app.py 2>&1 | grep ERROR
+streamlit run rag_analysis.py 2>&1 | grep ERROR
 
 # Sauvegarder les logs
-streamlit run app.py 2>&1 | tee app.log
+streamlit run rag_analysis.py 2>&1 | tee rag_analysis.log
 ```
 
 ## 🔍 Troubleshooting
