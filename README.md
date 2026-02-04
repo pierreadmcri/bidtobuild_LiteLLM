@@ -10,24 +10,15 @@ L'outil scanne un répertoire local, identifie les fichiers pertinents grâce à
 
 ## 🚀 Fonctionnalités
 
-### Version Standard (app.py)
 - **📂 Scan Intelligent :** Analyse automatique d'un dossier local.
-- **🔍 Filtrage Regex :** Détection automatique des types de documents :
-  - **RPO** (Run / Build)
-  - **PTC** (Proposition / Technique)
-  - **BCO** (Budget / Mandays)
-  - **BDC** (Bon de Commande)
-- **📅 Gestion des Versions :** En cas de fichiers multiples pour un même type, seule la version la plus récente (date de modification) est conservée.
-- **📄 Support Multi-formats :** Lecture native des fichiers `.pdf`, `.docx` et `.txt`.
-- **💰 Estimation des Tokens :** Calcul précis du coût en tokens.
-- **🧠 Synthèse IA :** Génération d'un résumé financier et technique via OpenAI GPT-4.
-
-### Version RAG (rag_analysis.py)
+- **🔍 Filtrage Regex :** Détection automatique des types de documents (RPO, PTC, BCO, BDC).
 - **✂️ Smart Chunking :** Découpe intelligente des documents avec overlap pour préserver le contexte.
-- **🔍 Recherche Vectorielle :** Embeddings + similarité cosinus pour trouver les passages pertinents.
+- **🔍 Recherche Vectorielle RAG :** Embeddings + similarité cosinus pour trouver les passages pertinents.
 - **🎯 MMR (Maximal Marginal Relevance) :** Diversification des résultats pour éviter la redondance.
 - **💾 Cache Multi-niveaux :** Streamlit + disque pour éviter les recalculs coûteux.
 - **⚡ Traitement Parallèle :** Embeddings calculés en parallèle avec `ThreadPoolExecutor`.
+- **📄 Support Multi-formats :** Lecture native des fichiers `.pdf`, `.docx`, `.txt`, `.xlsx`, `.xlsm`.
+- **🧠 Synthèse IA :** Génération d'analyses contextuelles via OpenAI GPT-4.
 
 ### Améliorations de Sécurité & Performance
 - **🛡️ Validation des Chemins :** Protection contre path traversal attacks.
@@ -67,32 +58,39 @@ L'outil scanne un répertoire local, identifie les fichiers pertinents grâce à
   MODEL_NAME="openai/gpt-4.1-mini"
   EMBEDDING_MODEL_NAME="openai/text-embedding-3-small"
   ```
-- Lancer l'app : **streamlit run app.py**
+- Lancer l'app : **streamlit run rag_analysis.py**
 
-## 🗂️ Comprendre la structure du code
+## 🗂️ Structure du code
 
-Le projet est volontairement compact pour faciliter la prise en main par des débutants. Voici les fichiers clés et leur rôle :
+Le projet est organisé de manière modulaire pour faciliter la maintenance :
 
-- **`app.py`** : application principale Streamlit. Elle contient toute la logique de bout en bout :
-  - *Configuration* : chargement des variables d'environnement et du modèle (`MODEL_NAME`).
-  - *Fonctions utilitaires* :
-    - `read_file_content` lit les fichiers `.pdf`, `.docx` et `.txt`.
-    - `scan_directory` parcourt un dossier local et renvoie la liste des fichiers avec leur date et taille.
-    - `estimate_tokens` estime le coût en tokens.
-  - *Logique métier* (`process_files`) : identifie les documents RPO, PTC, BCO et BDC à l'aide de Regex, sélectionne la version la plus récente et charge uniquement son contenu.
-  - *Interface* : construit l'expérience Streamlit (saisie du dossier à analyser, barre de progression, tableau récapitulatif, synthèse IA).
-- **`requirements.txt`** : liste des dépendances nécessaires (Streamlit, OpenAI, pandas, pypdf, python-docx, etc.).
-- **`README.md`** : ce guide d'utilisation et de compréhension.
+- **`rag_analysis.py`** : Application principale Streamlit avec RAG (Retrieval-Augmented Generation)
+  - Interface utilisateur interactive
+  - Traitement intelligent des documents avec chunking
+  - Recherche vectorielle et génération de réponses contextuelles
 
-### Flux de fonctionnement (simplifié)
+- **`config.py`** : Configuration centralisée
+  - Paramètres API OpenAI
+  - Limites de sécurité
+  - Configuration RAG (chunking, retrieval, etc.)
 
-1. **Saisie du chemin** : l'utilisateur entre un dossier local dans l'interface Streamlit.
-2. **Scan des fichiers** : `scan_directory` récolte les métadonnées des fichiers présents.
-3. **Filtrage par type** : `process_files` applique les motifs Regex pour repérer RPO/PTC/BCO/BDC, garde la version la plus récente et lit son contenu.
-4. **Estimation de coût** : `estimate_tokens` calcule les tokens pour anticiper le coût LLM.
-5. **Synthèse IA** : le texte combiné est envoyé au client OpenAI pour générer la synthèse financière et technique affichée à l'écran.
+- **`utils.py`** : Fonctions utilitaires réutilisables
+  - Wrappers API avec retry et rate limiting
+  - Validation et sécurité
+  - Extraction de texte (PDF, DOCX, Excel, OCR)
 
-En cas de besoin, tous les noms de fonctions et sections sont commentés dans `app.py` pour faciliter la navigation.
+- **`prompts/`** : Prompts système externalisés et modifiables
+
+- **`requirements.txt`** : Dépendances Python (Streamlit, OpenAI, pandas, etc.)
+
+### Flux de fonctionnement RAG
+
+1. **Upload/Scan** : L'utilisateur sélectionne un dossier de documents
+2. **Chunking** : Les documents sont découpés en segments intelligents
+3. **Embeddings** : Vectorisation des segments (cache disque pour performance)
+4. **Question** : L'utilisateur pose une question
+5. **Retrieval** : Recherche des segments les plus pertinents par similarité cosinus
+6. **Generation** : Le LLM génère une réponse basée sur les segments récupérés
 
 ## 📚 Documentation Complète
 
@@ -134,17 +132,11 @@ Le projet implémente plusieurs mesures de sécurité :
 
 ## ⚡ Performances
 
-### Mode Standard (app.py)
-- Traitement séquentiel
-- Idéal pour 5-10 documents
-- Temps : ~30-60 secondes
-
-### Mode RAG (rag_analysis.py)
-- Traitement parallèle des embeddings (4 workers)
-- Cache disque pour réutilisation
-- Idéal pour analyses répétées
-- Temps initial : ~60-90 secondes
-- Temps avec cache : ~5-10 secondes
+- **Traitement parallèle** : Embeddings calculés avec 4 workers simultanés
+- **Cache intelligent** : Réutilisation des embeddings pour les analyses répétées
+- **Scalabilité** : Idéal pour corpus de 20+ documents
+- **Temps initial** : ~60-90 secondes (création des embeddings)
+- **Temps avec cache** : ~5-10 secondes (réutilisation)
 
 ### Optimisations Recommandées
 
