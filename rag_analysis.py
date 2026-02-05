@@ -682,8 +682,8 @@ if run_btn:
 
             # Query 3: Aspects financiers et budgétaires
             """Charges BUILD jours-homme JH valorisation, charges RUN exploitation maintenance jours-homme,
-            CCJM cout journalier moyen, taux journalier, budget total montant HT prix forfait, marge brute
-            pourcentage rentabilité projet, cout total charges détaillées répartition, tableau financier
+            CCJM cout journalier moyen, taux journalier, TJM, budget total montant HT prix forfait, marge brute
+            GM, GM Build, GM Run, General Margin, cout total charges détaillées répartition, tableau financier
             récapitulatif budget prévisionnel""",
 
             # Query 4: Planning et organisation projet
