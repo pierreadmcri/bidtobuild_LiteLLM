@@ -32,7 +32,10 @@ L'outil scanne un répertoire local, identifie les fichiers pertinents grâce à
 
 - **Python 3.11** (Recommandé)
 - Accès à une clé API OpenAI
-- Un dossier (au même niveau que le script) contenant les fichiers a scanner 
+- **Structure de dossiers requise :**
+  - 📁 **Documents/** : Dossier principal avec un sous-dossier par client (important)
+  - 📁 **Cache/** : Stockage de la base vectorielle
+  - 📁 **Prompts/** : Contient le fichier `rag_system_prompt.txt` (prompt de rédaction pour l'output) 
 
 ## 📦 Installation
 
@@ -45,14 +48,16 @@ L'outil scanne un répertoire local, identifie les fichiers pertinents grâce à
 ## 🤖 Lancer l'app
 - Installer **Python 3.11**
 - Se positionner dans le repertoire via Terminal
-- Créer un environnement virtuel ex : **python3.11 -m venv .venv**
+- Créer un environnement virtuel :
+  - **Windows** : `py -3.11 -m venv .venv`
+  - **Mac/Linux** : `python3.11 -m venv .venv`
 - Activer l'environnement virtuel Window : **.venv\Scripts\Activate.ps1** Mac : **source .venv/bin/activate**
 - Installer les lib **pip install -r requirements.txt**
 - Créer un fichier **`.env`** à la racine avec au minimum votre clé API et, si besoin, le modèle voulu :
   ```bash
   # Configuration OpenAI
   OPENAI_API_KEY="votre_cle"
-  OPENAI_API_BASE="https://llmproxy.ai.orange"
+  OPENAI_API_BASE="https://api.votre-proxy-llm.com"
 
   # (Optionnel) Forcer un modèle spécifique
   MODEL_NAME="openai/gpt-4.1-mini"
