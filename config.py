@@ -132,8 +132,8 @@ PRICING = {
     },
     # GPT-4.1 Mini (modèle déployé)
     "openai/gpt-4.1-mini": {
-        "input": 0.00015,   # $0.15 / 1M tokens
-        "output": 0.0006,   # $0.60 / 1M tokens
+        "input": 0.0004,   # $0.40 / 1M tokens
+        "output": 0.0016,   # $1.60 / 1M tokens
     },
     # GPT-4 Turbo
     "openai/gpt-4-turbo": {

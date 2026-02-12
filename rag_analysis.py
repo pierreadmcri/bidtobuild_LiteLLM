@@ -665,42 +665,101 @@ if run_btn:
             st.error(f"Erreur : {e}")
             st.stop()
 
-    # 2. RECHERCHE VECTORIELLE
+    # 2. RECHERCHE VECTORIELLE AVEC MULTI-QUERIES
     try:
-        # Embedding query neutre
-        neutral_query = """
-                        Réunion de Lancement Interne projet: contexte et périmètre BUILD, 
-                        charges BUILD et RUN détaillées en jours-homme avec CCJM, budget et marge brute, 
-                        macro-planning avec jalons et dates, équipe Orange Business et rôles, 
-                        risques projet et actions, méthodologie et livrables, organisation transition RUN, 
-                        prérequis et fournitures client, validation contractuelle intégration CRM
-                        """
+        # Système de multi-requêtes pour améliorer la précision du retrieval
+        # Chaque requête cible un aspect spécifique des documents
+        multi_queries = [
+            # Query 1: Contexte et documentation générale
+            "contexte documentation",
 
-        with st.spinner("🧠 Recherche des passages pertinents..."):
-            q_vec_list = safe_embedding(
-                texts=[neutral_query],
+            # Query 2: Aspects contractuels et commerciaux
+            """Réunion lancement project Cloud Centre de contact, contexte projet périmètre BUILD scope
+            fonctionnel, mode engagement forfait régie, contractualisation conditions générales, proposition
+            commerciale technique, bon de commande contrat, SLA engagements service, pénalités retard,
+            livrables attendus, prérequis client fournitures, ressources matérielles achats, documentation
+            avant-vente référence documents""",
+
+            # Query 3: Aspects financiers et budgétaires
+            """Charges BUILD jours-homme JH valorisation, charges RUN exploitation maintenance jours-homme,
+            CCJM cout journalier moyen, taux journalier, TJM, budget total montant HT prix forfait, marge brute
+            GM, GM Build, GM Run, General Margin, cout total charges détaillées répartition, tableau financier
+            récapitulatif budget prévisionnel""",
+
+            # Query 4: Planning et organisation projet
+            """Planning organisation, Macro-planning project jalons milestones dates clés, ateliers workshops
+            dépendances planning, équipe projet Orange Business chef de projet roles responsabilités,
+            organigramme formation compétences, risques identifiés actions mitigation criticité impact,
+            méthodologie agile SCRUM cycle V cascade, organisation RUN transition HOTO VABF ELS critères sortie,
+            intégration CRM connecteur API validation contractuelle, pilotage reporting indicateurs suivi"""
+        ]
+
+        with st.spinner("🧠 Recherche multi-critères des passages pertinents..."):
+            # Calculer les embeddings pour toutes les requêtes en une seule fois
+            logger.info(f"Calcul des embeddings pour {len(multi_queries)} requêtes...")
+            all_q_vecs = safe_embedding(
+                texts=multi_queries,
                 model=embedding_model_name
             )
-            q_emb = np.array(q_vec_list[0], dtype=float)
 
-            # Similarité Cosinus
-            norm_q = np.linalg.norm(q_emb) or 1.0
-            norm_docs = np.linalg.norm(embeddings, axis=1)
-            norm_docs[norm_docs == 0] = 1.0
-            similarities = (embeddings @ q_emb) / (norm_docs * norm_q)
+            # Dictionnaire pour agréger les scores par chunk
+            chunk_scores = {}
 
-            candidate_indices = np.where(similarities >= sim_threshold)[0]
+            # Pour chaque requête, calculer la similarité et agréger les scores
+            for query_idx, q_vec in enumerate(all_q_vecs):
+                q_emb = np.array(q_vec, dtype=float)
+
+                # Similarité Cosinus
+                norm_q = np.linalg.norm(q_emb) or 1.0
+                norm_docs = np.linalg.norm(embeddings, axis=1)
+                norm_docs[norm_docs == 0] = 1.0
+                similarities = (embeddings @ q_emb) / (norm_docs * norm_q)
+
+                # Agréger les scores (moyenne pondérée avec poids décroissant)
+                # Query 1 (contexte) a moins de poids, les autres plus
+                weight = 0.2 if query_idx == 0 else 1.0
+
+                for chunk_idx, sim_score in enumerate(similarities):
+                    if chunk_idx not in chunk_scores:
+                        chunk_scores[chunk_idx] = {"total": 0.0, "count": 0, "max": 0.0}
+                    chunk_scores[chunk_idx]["total"] += sim_score * weight
+                    chunk_scores[chunk_idx]["count"] += weight
+                    chunk_scores[chunk_idx]["max"] = max(chunk_scores[chunk_idx]["max"], sim_score)
+
+            # Calculer le score final pour chaque chunk (moyenne pondérée)
+            final_scores = np.zeros(len(chunks))
+            for chunk_idx, scores in chunk_scores.items():
+                # Score = 70% moyenne + 30% max (favorise les chunks pertinents sur plusieurs aspects)
+                avg_score = scores["total"] / scores["count"]
+                max_score = scores["max"]
+                base_score = 0.7 * avg_score + 0.3 * max_score
+
+                # Boost pour les chunks Excel (Build/Run contiennent les infos financières)
+                chunk_name = chunks[chunk_idx]['doc_name'].lower()
+                if chunk_name.endswith('.xlsx') or chunk_name.endswith('.xlsm'):
+                    # Appliquer un boost de 40% pour prioriser les données Excel
+                    final_scores[chunk_idx] = base_score * 1.4
+                    logger.debug(f"Boost Excel appliqué au chunk {chunk_idx} ({chunks[chunk_idx]['doc_name']}): {base_score:.3f} → {base_score * 1.4:.3f}")
+                else:
+                    final_scores[chunk_idx] = base_score
+
+            # Sélection des candidats au-dessus du seuil
+            candidate_indices = np.where(final_scores >= sim_threshold)[0]
             if len(candidate_indices) == 0:
                 st.warning("⚠️ Seuil de pertinence non atteint. Utilisation des meilleurs segments disponibles.")
-                candidate_indices = np.argsort(-similarities)[: max(top_k_chunks * 3, top_k_chunks)]
+                candidate_indices = np.argsort(-final_scores)[: max(top_k_chunks * 3, top_k_chunks)]
 
-            # Sélection (MMR ou Standard)
+            logger.info(f"Multi-queries: {len(candidate_indices)} candidats trouvés (seuil: {sim_threshold})")
+
+            # Sélection finale (MMR ou Standard)
             if use_mmr:
+                # Utiliser la moyenne des embeddings de requêtes pour MMR
+                avg_q_emb = np.mean([np.array(v) for v in all_q_vecs], axis=0)
                 sub_emb = embeddings[candidate_indices]
-                mmr_indices_sub = mmr(sub_emb, q_emb, top_k_chunks, lambda_mmr)
+                mmr_indices_sub = mmr(sub_emb, avg_q_emb, top_k_chunks, lambda_mmr)
                 top_indices = [int(candidate_indices[i]) for i in mmr_indices_sub]
             else:
-                sorted_candidates = candidate_indices[np.argsort(-similarities[candidate_indices])]
+                sorted_candidates = candidate_indices[np.argsort(-final_scores[candidate_indices])]
                 top_indices = sorted_candidates[:top_k_chunks].tolist()
 
             selected_chunks = [chunks[i] for i in top_indices]
