@@ -442,7 +442,7 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
         "RPO": [r".*RPO.*"],
         "PTC": [r".*PTC.*", r".*Proposition[\s_-]*commerciale.*"],
         "BCO": [r".*BCO.*"],
-        "BDC": [r".*BDC.*", r".*[Bb]on[\s_-]*de[\s_-]*commande.*"],
+        "BDC": [r".*BDC.*", r".*bon[\s_-]*de[\s_-]*commande.*"],
     }
 
     all_files = scan_directory(folder_path)
