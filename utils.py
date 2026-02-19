@@ -349,102 +349,151 @@ def extract_text_from_image(image_path: Union[str, Path], lang: str = None) -> s
         return f"[Erreur OCR : {str(e)}]"
 
 # ==========================================
-# EXTRACTION EXCEL
+# EXTRACTION EXCEL (SPÉCIALISÉE BUILD/RUN)
 # ==========================================
 
-def extract_text_from_excel(file_path: Union[str, Path], max_sheets: int = None, strategy: str = None) -> str:
+def extract_text_from_excel(file_path: Union[str, Path]) -> str:
     """
-    Extrait le texte d'un fichier Excel (.xlsx, .xlsm) avec sélection intelligente des onglets.
+    Extrait et assainit les données d'un fichier Excel pour le RAG.
+
+    Utilise l'extraction spécialisée Build/Run (excel_processing) qui :
+    - Cible les onglets Build et Run des fichiers BCO
+    - Filtre les lignes pertinentes (profils avec charge > 0)
+    - Extrait les indicateurs clés (marge, charges JH, CCJM, durée)
+    - Produit un texte structuré avec labels sémantiques pour la recherche vectorielle
+
+    Si les onglets Build/Run sont absents, un fallback générique est utilisé.
+
+    Args:
+        file_path: Chemin vers le fichier Excel (.xlsx ou .xlsm)
+
+    Returns:
+        Texte structuré et labellisé pour ingestion RAG
+    """
+    file_path = Path(file_path)
+
+    # Tentative d'extraction spécialisée Build/Run
+    try:
+        from excel_processing import process_excel_file
+
+        records = process_excel_file(file_path)
+
+        if not records:
+            logger.warning(f"Aucune donnée extraite de {file_path.name}")
+            return _extract_excel_fallback(file_path)
+
+        return _format_excel_records_for_rag(file_path, records)
+
+    except ValueError as e:
+        # Onglets Build/Run non trouvés → fallback générique
+        logger.info(
+            f"Extraction spécialisée Build/Run impossible ({e}), "
+            f"fallback générique pour {file_path.name}"
+        )
+        return _extract_excel_fallback(file_path)
+
+    except Exception as e:
+        logger.error(f"Erreur extraction Excel {file_path}: {e}")
+        return f"[Erreur lecture Excel : {str(e)}]"
+
+
+def _format_excel_records_for_rag(file_path: Path, records: list) -> str:
+    """
+    Formate les enregistrements JSONL en texte structuré pour le pipeline RAG.
+
+    Le texte produit utilise des séparateurs \\n\\n entre sections pour un
+    découpage optimal par smart_chunk_document() et inclut des labels
+    sémantiques qui améliorent la pertinence de la recherche vectorielle.
+
+    Args:
+        file_path: Chemin du fichier source
+        records: Liste d'enregistrements JSONL issus de process_excel_file()
+
+    Returns:
+        Texte formaté prêt pour le chunking et l'embedding
+    """
+    content_parts = []
+
+    for record in records:
+        labels = record.get("labels", {})
+        data = record.get("data", {})
+        tags = data.get("tags", {})
+
+        # En-tête avec labels sémantiques
+        content_parts.append(
+            f"[FICHIER EXCEL: {labels.get('source_file', file_path.name)}]\n"
+            f"Section: {labels.get('section', 'build_run_summary')}\n"
+            f"Mots-clés: {', '.join(labels.get('keywords', []))}"
+        )
+
+        # Ligne de synthèse JSONL (champ text)
+        content_parts.append(record.get("text", ""))
+
+        # Indicateurs Build
+        build_tags = tags.get("build", {})
+        if build_tags:
+            lines = ["=== INDICATEURS BUILD ==="]
+            for key, value in build_tags.items():
+                if value is not None:
+                    lines.append(f"{key}: {value}")
+            content_parts.append("\n".join(lines))
+
+        # Indicateurs Run
+        run_tags = tags.get("run", {})
+        if run_tags:
+            lines = ["=== INDICATEURS RUN ==="]
+            for key, value in run_tags.items():
+                if value is not None:
+                    lines.append(f"{key}: {value}")
+            content_parts.append("\n".join(lines))
+
+        # Détail des profils Build
+        build_rows = data.get("build_rows", [])
+        if build_rows:
+            lines = [f"=== DETAIL PROFILS BUILD ({len(build_rows)} lignes) ==="]
+            for row in build_rows:
+                lines.append(
+                    f"{row.get('Profils internes')} / {row.get('Type')} / "
+                    f"{row.get('Valeurs')} / CCJM: {row.get('CCJM')}"
+                )
+            content_parts.append("\n".join(lines))
+
+    return "\n\n".join(content_parts)
+
+
+def _extract_excel_fallback(file_path: Path) -> str:
+    """
+    Extraction générique pour les fichiers Excel sans onglets Build/Run.
+
+    Utilise pandas pour lire les premiers onglets et extraire les données
+    sous forme de texte brut. Sert de fallback quand l'extraction spécialisée
+    Build/Run ne peut pas s'appliquer (ex: fichiers RPO/PTC au format Excel).
 
     Args:
         file_path: Chemin vers le fichier Excel
-        max_sheets: Nombre maximum d'onglets à extraire (défaut: config.MAX_EXCEL_SHEETS)
-        strategy: Stratégie de sélection ('exact', 'auto' ou 'first')
-                  - 'exact': Correspondance stricte du nom d'onglet (recommandé)
-                  - 'auto': Recherche partielle dans le nom d'onglet
-                  - 'first': Prend les N premiers onglets
 
     Returns:
-        Texte formaté extrait des onglets sélectionnés
-
-    Raises:
-        Exception: Si la lecture échoue
+        Texte extrait des onglets disponibles
     """
     try:
         import openpyxl
         from openpyxl.utils import get_column_letter
     except ImportError:
-        error_msg = "openpyxl non installé. Installation requise : pip install openpyxl"
-        logger.error(error_msg)
-        return f"[Erreur Excel : openpyxl non installé]"
+        return "[Erreur Excel : openpyxl non installé]"
 
-    max_sheets = max_sheets or config.MAX_EXCEL_SHEETS
-    strategy = strategy or config.EXCEL_SHEET_STRATEGY
+    max_sheets = config.MAX_EXCEL_SHEETS
     max_rows = config.MAX_EXCEL_ROWS
 
     try:
-        # Charger le workbook (data_only=True pour récupérer les valeurs calculées)
         workbook = openpyxl.load_workbook(file_path, data_only=True, read_only=True)
         sheet_names = workbook.sheetnames
-
-        logger.info(f"Fichier Excel chargé : {len(sheet_names)} onglet(s) trouvé(s)")
 
         if not sheet_names:
             return "[Alerte : Aucun onglet trouvé dans le fichier Excel]"
 
-        # Sélection des onglets selon la stratégie
-        selected_sheets = []
+        selected_sheets = sheet_names[:max_sheets]
 
-        if strategy == "exact":
-            # Stratégie exacte : correspondance stricte du nom d'onglet
-            priority_names = [name.strip() for name in config.EXCEL_PRIORITY_SHEETS.split(",")]
-
-            # Chercher les onglets avec correspondance exacte
-            for priority in priority_names:
-                for sheet_name in sheet_names:
-                    # Correspondance exacte (insensible à la casse)
-                    if sheet_name.strip().lower() == priority.lower() and sheet_name not in selected_sheets:
-                        selected_sheets.append(sheet_name)
-                        logger.info(f"Onglet trouvé (correspondance exacte) : {sheet_name}")
-                        if len(selected_sheets) >= max_sheets:
-                            break
-                if len(selected_sheets) >= max_sheets:
-                    break
-
-            # Si on n'a pas trouvé tous les onglets, loguer un avertissement
-            if len(selected_sheets) < len(priority_names):
-                missing = [p for p in priority_names if p not in [s.strip() for s in selected_sheets]]
-                logger.warning(f"Onglets non trouvés : {', '.join(missing)}")
-
-        elif strategy == "auto":
-            # Stratégie intelligente : recherche partielle dans le nom
-            priority_names = [name.strip() for name in config.EXCEL_PRIORITY_SHEETS.split(",")]
-
-            # 1. Chercher les onglets prioritaires (recherche partielle)
-            for priority in priority_names:
-                for sheet_name in sheet_names:
-                    if priority.lower() in sheet_name.lower() and sheet_name not in selected_sheets:
-                        selected_sheets.append(sheet_name)
-                        if len(selected_sheets) >= max_sheets:
-                            break
-                if len(selected_sheets) >= max_sheets:
-                    break
-
-            # 2. Compléter avec les premiers onglets si besoin
-            if len(selected_sheets) < max_sheets:
-                for sheet_name in sheet_names:
-                    if sheet_name not in selected_sheets:
-                        selected_sheets.append(sheet_name)
-                        if len(selected_sheets) >= max_sheets:
-                            break
-        else:
-            # Stratégie 'first' : prendre les N premiers onglets
-            selected_sheets = sheet_names[:max_sheets]
-
-        logger.info(f"Onglets sélectionnés : {selected_sheets}")
-
-        # Extraction du contenu
-        content = f"[FICHIER EXCEL: {Path(file_path).name}]\n"
+        content = f"[FICHIER EXCEL: {file_path.name}]\n"
         content += f"Nombre total d'onglets : {len(sheet_names)}\n"
         content += f"Onglets analysés : {', '.join(selected_sheets)}\n\n"
 
@@ -455,31 +504,19 @@ def extract_text_from_excel(file_path: Union[str, Path], max_sheets: int = None,
                 content += f"ONGLET : {sheet_name}\n"
                 content += f"{'='*60}\n\n"
 
-                # Compter les lignes avec données
-                rows_with_data = 0
-                for row in sheet.iter_rows(values_only=True):
-                    if any(cell is not None for cell in row):
-                        rows_with_data += 1
-
-                # Extraire les données (limité par MAX_EXCEL_ROWS)
                 row_count = 0
                 for row_idx, row in enumerate(sheet.iter_rows(values_only=True), start=1):
-                    # Limiter le nombre de lignes
                     if max_rows > 0 and row_count >= max_rows:
-                        content += f"\n... (lignes suivantes ignorées, limite : {max_rows} lignes)\n"
+                        content += f"\n... (limite : {max_rows} lignes atteinte)\n"
                         break
 
-                    # Ignorer les lignes complètement vides
                     if not any(cell is not None for cell in row):
                         continue
 
                     row_count += 1
-
-                    # Formater la ligne
                     row_text = []
                     for col_idx, cell_value in enumerate(row, start=1):
                         if cell_value is not None:
-                            # Convertir en string et nettoyer
                             cell_str = str(cell_value).strip()
                             if cell_str:
                                 col_letter = get_column_letter(col_idx)
@@ -488,19 +525,15 @@ def extract_text_from_excel(file_path: Union[str, Path], max_sheets: int = None,
                     if row_text:
                         content += f"Ligne {row_idx}: " + " | ".join(row_text) + "\n"
 
-                content += f"\nTotal lignes avec données : {rows_with_data}\n"
-
             except Exception as sheet_err:
-                logger.warning(f"Erreur lors de la lecture de l'onglet '{sheet_name}': {sheet_err}")
+                logger.warning(f"Erreur lecture onglet '{sheet_name}': {sheet_err}")
                 content += f"\n[Erreur lors de la lecture de l'onglet '{sheet_name}']\n"
 
         workbook.close()
-        logger.info(f"Extraction Excel terminée : {len(selected_sheets)} onglet(s) traité(s)")
-
         return content
 
     except Exception as e:
-        logger.error(f"Erreur lors de la lecture du fichier Excel {file_path}: {e}")
+        logger.error(f"Erreur lecture Excel fallback {file_path}: {e}")
         return f"[Erreur lecture Excel : {str(e)}]"
 
 # ==========================================
