@@ -233,7 +233,7 @@ def build_file_chunk_record(
             f"{row.get('Profils internes')} / {row.get('Type')} / "
             f"{row.get('Valeurs')} / CCJM: {row.get('CCJM')}"
         )
-        for row in build_rows[:5]
+        for row in build_rows #[:5]
     )
     chunk_text = (
         f"Fichier: {excel_path.name} | Profils Build: {len(build_rows)} lignes | "
