@@ -436,9 +436,13 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
             logs.append("⚠️ Cache disque corrompu, nouveau calcul nécessaire.")
 
     # --- B. SCAN ET LECTURE ---
+    # Chaque entrée : label -> liste de regex (aliases).
+    # Si plusieurs alias matchent, on garde le document le plus récent.
     search_patterns = {
-        "RPO": r".*RPO.*", "PTC": r".*PTC.*",
-        "BCO": r".*BCO.*", "BDC": r".*BDC.*"
+        "RPO": [r".*RPO.*"],
+        "PTC": [r".*PTC.*", r".*Proposition[\s_-]*commerciale.*"],
+        "BCO": [r".*BCO.*"],
+        "BDC": [r".*BDC.*", r".*[Bb]on[\s_-]*de[\s_-]*commande.*"],
     }
 
     all_files = scan_directory(folder_path)
@@ -446,8 +450,14 @@ def load_and_process_data_optimized(folder_path: str, max_chunk_tokens: int, ove
         return None, None, logs, "Dossier vide ou introuvable", []
 
     selected_docs = []
-    for label, pattern in search_patterns.items():
-        candidates = [f for f in all_files if re.search(pattern, f["name"], re.IGNORECASE)]
+    for label, patterns in search_patterns.items():
+        candidates = []
+        for pattern in patterns:
+            candidates.extend(
+                f for f in all_files
+                if re.search(pattern, f["name"], re.IGNORECASE)
+                and f not in candidates
+            )
         if candidates:
             candidates.sort(key=lambda x: x["date"], reverse=True)
             winner = candidates[0]
