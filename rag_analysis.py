@@ -612,7 +612,7 @@ col_logo, col_title = st.columns([1, 6])
 with col_logo:
     st.markdown("# ⚡")
 with col_title:
-    st.title("Analyseur de Projets IT")
+    st.title("BidtoBuild - Preparation RLI")
     st.markdown("RAG Intelligent • RPO / PTC / BCO / BDC")
 
 st.markdown("---")
