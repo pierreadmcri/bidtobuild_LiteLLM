@@ -190,25 +190,6 @@ RATE_LIMIT_DELAY=0.05
 - Top-K : 10
 - MMR activé : Oui (λ=0.6)
 
-## 🧪 Tests
-
-Lancer les tests unitaires :
-
-```bash
-# Installer pytest
-pip install pytest pytest-mock
-
-# Lancer tous les tests
-pytest test_utils.py -v
-
-# Lancer un test spécifique
-pytest test_utils.py::TestValidation::test_validate_file_path_valid -v
-
-# Avec couverture de code
-pip install pytest-cov
-pytest test_utils.py --cov=utils --cov-report=html
-```
-
 ## 📝 Logs
 
 ### Configuration des Logs
