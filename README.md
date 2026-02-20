@@ -1,6 +1,6 @@
-# 🏗️ AI Document Scanner
+# 🤖 AI Document Scanner
 
-Une application **Streamlit** intelligente qui automatise l'analyse et la synthèse de documents de construction (BCO, RPO, PTC, BDC).
+Une application **Streamlit** intelligente qui automatise l'analyse et la synthèse de documents de build (BCO, RPO, PTC, BDC).
 
 L'outil scanne un répertoire local, identifie les fichiers pertinents grâce à des motifs (Regex), sélectionne automatiquement la version la plus récente en cas de doublon, et génère une synthèse structurée via un LLM (OpenAI / GPT-4).
 
@@ -39,7 +39,8 @@ L'outil scanne un répertoire local, identifie les fichiers pertinents grâce à
 
 ## 📦 Installation
 
-1. **Cloner le projet**
+1. Se positionner via terminal a l'endroit ou sera créer le Projet
+2. **Cloner le projet**
    ```bash
    git clone [https://github.com/votre-user/votre-repo.git](https://github.com/votre-user/votre-repo.git)
    cd votre-repo
@@ -93,7 +94,7 @@ Le projet est organisé de manière modulaire pour faciliter la maintenance :
 1. **Upload/Scan** : L'utilisateur sélectionne un dossier de documents
 2. **Chunking** : Les documents sont découpés en segments intelligents
 3. **Embeddings** : Vectorisation des segments (cache disque pour performance)
-4. **Question** : L'utilisateur pose une question
+4. **Prompts** : Le prompt de rédaction est lu
 5. **Retrieval** : Recherche des segments les plus pertinents par similarité cosinus
 6. **Generation** : Le LLM génère une réponse basée sur les segments récupérés
 
