@@ -228,17 +228,17 @@ def build_file_chunk_record(
     normalized_build_tags = {key: normalize_value(value) for key, value in build_tags.items()}
     normalized_run_tags = {key: normalize_value(value) for key, value in run_tags.items()}
 
-    preview = " ; ".join(
+    all_rows_text = " ; ".join(
         (
             f"{row.get('Profils internes')} / {row.get('Type')} / "
             f"{row.get('Valeurs')} / CCJM: {row.get('CCJM')}"
         )
-        for row in build_rows #[:5]
+        for row in build_rows
     )
     chunk_text = (
         f"Fichier: {excel_path.name} | Profils Build: {len(build_rows)} lignes | "
         f"Build tags: {normalized_build_tags} | Run tags: {normalized_run_tags} | "
-        f"Aperçu: {preview}"
+        f"Profils: {all_rows_text}"
     )
 
     return {
