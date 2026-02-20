@@ -22,11 +22,6 @@ env/
 documents_types/
 prompts/
 
-# --- Tests ---
-.pytest_cache/
-htmlcov/
-.coverage
-
 # --- Logs ---
 *.log
 
