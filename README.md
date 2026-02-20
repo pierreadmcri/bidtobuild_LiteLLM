@@ -39,7 +39,7 @@ L'outil scanne un répertoire local, identifie les fichiers pertinents grâce à
 
 ## 📦 Installation
 
-1. Se positionner via terminal a l'endroit ou sera créer le Projet
+1. **Se positionner via terminal a l'endroit ou sera créé le Projet**
 2. **Cloner le projet**
    ```bash
    git clone [https://github.com/votre-user/votre-repo.git](https://github.com/votre-user/votre-repo.git)
