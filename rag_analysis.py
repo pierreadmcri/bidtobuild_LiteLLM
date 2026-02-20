@@ -611,7 +611,7 @@ with st.sidebar:
         top_k_chunks = st.slider("Top-K segments", 3, 20, 6)
         sim_threshold = st.slider("Seuil similarité", 0.0, 1.0, 0.15, 0.01)
 
-        use_mmr = st.checkbox("Activer MMR (Diversité)", value=True)
+        use_mmr = st.checkbox("Activer MMR (Diversité)", value=False)
         if use_mmr:
             lambda_mmr = st.slider("MMR λ", 0.1, 0.9, 0.7)
         else:

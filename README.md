@@ -111,21 +111,6 @@ Le projet est organisé de manière modulaire pour faciliter la maintenance :
 - **[utils.py](utils.py)** : Fonctions utilitaires avec retry, validation, rate limiting
 - **[prompts/](prompts/)** : Prompts système externalisés et modifiables
 
-## 🧪 Tests
-
-Des tests unitaires sont disponibles pour valider les fonctions critiques :
-
-```bash
-# Installer les dépendances de test
-pip install pytest pytest-mock pytest-cov
-
-# Lancer les tests
-pytest test_utils.py -v
-
-# Avec couverture de code
-pytest test_utils.py --cov=utils --cov-report=html
-```
-
 ## 🔒 Sécurité
 
 Le projet implémente plusieurs mesures de sécurité :

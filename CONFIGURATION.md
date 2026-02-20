@@ -89,7 +89,7 @@ Configurables via l'interface Streamlit (sidebar) :
 |-----------|--------|-------|-------------|
 | **Top-K** | 6 | 3-20 | Nombre de chunks utilisés pour la génération |
 | **Seuil similarité** | 0.15 | 0.0-1.0 | Score minimum de pertinence |
-| **MMR activé** | ✅ Oui | - | Diversification des résultats |
+| **MMR activé** | ❌ Non | - | Diversification des résultats |
 | **MMR Lambda (λ)** | 0.7 | 0.1-0.9 | Balance pertinence/diversité |
 
 **Impact MMR Lambda** :
@@ -189,25 +189,6 @@ RATE_LIMIT_DELAY=0.05
 - Overlap : 150
 - Top-K : 10
 - MMR activé : Oui (λ=0.6)
-
-## 🧪 Tests
-
-Lancer les tests unitaires :
-
-```bash
-# Installer pytest
-pip install pytest pytest-mock
-
-# Lancer tous les tests
-pytest test_utils.py -v
-
-# Lancer un test spécifique
-pytest test_utils.py::TestValidation::test_validate_file_path_valid -v
-
-# Avec couverture de code
-pip install pytest-cov
-pytest test_utils.py --cov=utils --cov-report=html
-```
 
 ## 📝 Logs
 
