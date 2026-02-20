@@ -89,7 +89,7 @@ Configurables via l'interface Streamlit (sidebar) :
 |-----------|--------|-------|-------------|
 | **Top-K** | 6 | 3-20 | Nombre de chunks utilisés pour la génération |
 | **Seuil similarité** | 0.15 | 0.0-1.0 | Score minimum de pertinence |
-| **MMR activé** | ✅ Oui | - | Diversification des résultats |
+| **MMR activé** | ❌ Non | - | Diversification des résultats |
 | **MMR Lambda (λ)** | 0.7 | 0.1-0.9 | Balance pertinence/diversité |
 
 **Impact MMR Lambda** :
